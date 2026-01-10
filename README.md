@@ -80,7 +80,7 @@ Templates can use `{model}` and `{thinking}` placeholders. If omitted, the bot a
 npm start
 ```
 In Telegram: send text or audio. Use `/reset` to clear context and kill the tmux session for that chat.
-Use `/model <name>` and `/thinking <level>` to set per-chat options.
+Use `/model <name>` and `/thinking <level>` to set global options.
 
 ## How it works
 - Creates a tmux session per chat (`codexbot-<chatId>`)
