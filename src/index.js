@@ -44,6 +44,7 @@ const bot = new Telegraf(BOT_TOKEN);
 const queues = new Map();
 const threads = new Map();
 const models = new Map();
+const thinkings = new Map();
 
 function shellQuote(value) {
   const escaped = String(value).replace(/'/g, String.raw`'\''`);
@@ -366,12 +367,13 @@ async function runAgentForChat(chatId, prompt, options = {}) {
   const end = `<<<END:${uuid}>>>`;
   const threadId = threads.get(chatId);
   const model = models.get(chatId);
+  const thinking = thinkings.get(chatId);
   const finalPrompt = buildPrompt(prompt, options.imagePaths || []);
   const promptBase64 = Buffer.from(finalPrompt, 'utf8').toString('base64');
   const promptExpression = '"$PROMPT"';
   const agentCmd = buildAgentCommand(
     finalPrompt,
-    { chatId, threadId, promptExpression, model },
+    { chatId, threadId, promptExpression, model, thinking },
     agentConfig
   );
   const command = [
@@ -445,6 +447,22 @@ bot.command('model', (ctx) => {
   }
   models.set(chatId, value);
   ctx.reply(`Model set to ${value}.`);
+});
+
+bot.command('thinking', (ctx) => {
+  const chatId = ctx.chat.id;
+  const value = extractCommandValue(ctx.message.text);
+  if (!value) {
+    const current = thinkings.get(chatId);
+    if (current) {
+      ctx.reply(`Current thinking: ${current}`);
+    } else {
+      ctx.reply('No thinking level set. Use /thinking <level>.');
+    }
+    return;
+  }
+  thinkings.set(chatId, value);
+  ctx.reply(`Thinking level set to ${value}.`);
 });
 
 bot.command('reset', async (ctx) => {
