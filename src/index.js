@@ -294,6 +294,7 @@ bot.on('text', (ctx) => {
   const chatId = ctx.chat.id;
   const text = ctx.message.text.trim();
   if (!text) return;
+  if (text.startsWith('/')) return;
 
   enqueue(chatId, async () => {
     const stopTyping = startTyping(ctx);
