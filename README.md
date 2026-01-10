@@ -1,39 +1,83 @@
-# Telegram Codex Tmux Bot
+# Aipal: Telegram Codex Bot
 
-Minimal bot that connects Telegram with `codex` via `tmux`. Each message runs as a command in a tmux session and the output is extracted using markers.
+![Aipal](docs/assets/aipal.jpg)
+
+Minimal Telegram bot that forwards messages to a local CLI agent (Codex by default). Each message is executed locally and the output is sent back to the chat.
+
+## What it does
+- Runs your configured CLI agent for every message
+- Queues requests per chat to avoid overlapping runs
+- Keeps Codex thread state when JSON output is detected
+- Handles text, audio (via Parakeet), and images
+- Supports `/model` and `/thinking` to tweak the agent at runtime
 
 ## Requirements
-- Node.js 18+ (uses native `fetch`)
-- `tmux`
-- `codex` in PATH (or configure `CODEX_TEMPLATE`)
-- `parakeet-mlx` in PATH (audio transcription) + `ffmpeg`
+- Node.js 18+
+- Agent CLI on PATH (default: `codex`)
+- Audio (optional): `parakeet-mlx` + `ffmpeg`
 
-## Install
+## Quick start
 ```bash
-git clone https://github.com/antoniolg/telegram-codex-tmux-bot.git
-cd telegram-codex-tmux-bot
+git clone https://github.com/antoniolg/aipal.git
+cd aipal
 npm install
 cp .env.example .env
 ```
 
+1. Create a Telegram bot with BotFather and get the token.
+2. Set `TELEGRAM_BOT_TOKEN` in `.env`.
+3. Start the bot:
+
+```bash
+npm start
+```
+
+Open Telegram, send `/start`, then any message.
+
+## Usage (Telegram)
+- Text: send a message and get the agent response
+- Audio: send a voice note or audio file (transcribed with Parakeet)
+- Images: send a photo or image file (caption becomes the prompt)
+- `/reset`: clear the chat session (drops the Codex thread id)
+- `/model <name>`: set the model (persisted in `config.json`)
+- `/thinking <level>`: set thinking level (persisted in `config.json`)
+
+### Images in responses
+If the agent generates an image, save it under `IMAGE_DIR` and reply with:
+```
+[[image:/absolute/path]]
+```
+The bot will send the image back to Telegram.
+
 ## Configuration
-Edit `.env` and set `TELEGRAM_BOT_TOKEN` (BotFather).
+Environment variables live in `.env`.
 
-Optional variables (defaults in `.env.example`):
-- `BOT_CONFIG_PATH`: path to a JSON config (defaults to `~/.config/aipal/config.json` or `$XDG_CONFIG_HOME/aipal/config.json`).
-- `AGENT`: agent key to use when JSON config is missing or does not specify one.
-- `TMUX_SESSION_PREFIX`: per-chat session prefix.
-- `TMUX_LINES`: captured pane lines (e.g. `-5000`).
-- `CODEX_TIMEOUT_MS`: execution timeout.
-- `CODEX_TEMPLATE`: full template (uses `{prompt}` and optional `{session}`).
-- `CODEX_CMD` / `CODEX_ARGS`: alternative when not using a template.
-- `PARAKEET_CMD`, `PARAKEET_MODEL`, `PARAKEET_TIMEOUT_MS`: transcription.
-- `IMAGE_DIR`: local folder for incoming/outgoing images (default: system temp under `telegram-codex/images`).
-- `IMAGE_TTL_HOURS`: auto-delete images older than this (default: 24). Set to `0` to disable.
-- `IMAGE_CLEANUP_INTERVAL_MS`: cleanup interval (default: 3600000 / 1h).
+**Bot**
+- `TELEGRAM_BOT_TOKEN`: required
 
-### Agent config (JSON)
-Create `~/.config/aipal/config.json` (or point `BOT_CONFIG_PATH` to another file) to pick the agent and its command.
+**Config file**
+- `BOT_CONFIG_PATH`: JSON config path (default: `~/.config/aipal/config.json` or `$XDG_CONFIG_HOME/aipal/config.json`)
+- `AGENT`: default agent key when the JSON config does not specify one
+
+**Agent command**
+- `CODEX_CMD`: default `codex`
+- `CODEX_ARGS`: default `--json --skip-git-repo-check`
+- `CODEX_TEMPLATE`: optional full template; supports `{prompt}`, `{session}`, `{model}`, `{thinking}`
+
+**Audio**
+- `PARAKEET_CMD`: default `parakeet-mlx`
+- `PARAKEET_MODEL`: optional model name
+- `PARAKEET_TIMEOUT_MS`: transcription timeout
+
+**Images**
+- `IMAGE_DIR`: folder for inbound/outbound images (default: OS temp under `aipal/images`)
+- `IMAGE_TTL_HOURS`: auto-delete images older than this (default: 24, set `0` to disable)
+- `IMAGE_CLEANUP_INTERVAL_MS`: cleanup interval (default: 3600000 / 1h)
+
+See `docs/configuration.md` for the JSON schema and full examples.
+
+## Agent config (JSON)
+Create the JSON config file to define which agent to run and how to invoke it.
 
 Example:
 ```json
@@ -58,40 +102,11 @@ Example:
       "args": "",
       "template": "cloud-code {prompt}",
       "output": "text",
-      "session": { "strategy": "chat" },
-      "modelArg": "",
-      "thinkingArg": ""
-    },
-    "gemini-cly": {
-      "type": "generic",
-      "cmd": "gemini-cly",
-      "args": "",
-      "template": "gemini-cly {prompt}",
-      "output": "text",
-      "session": { "strategy": "chat" },
-      "modelArg": "",
-      "thinkingArg": ""
+      "session": { "strategy": "chat" }
     }
   }
 }
 ```
-Templates can use `{model}` and `{thinking}` placeholders. If omitted, the bot appends `modelArg`/`thinkingArg` when set via `/model` or `/thinking`.
-
-## Run
-```bash
-npm start
-```
-In Telegram: send text or audio. Use `/reset` to clear context and kill the tmux session for that chat.
-Use `/model <name>` and `/thinking <level>` to set global options (persisted to the config file).
-
-## How it works
-- Creates a tmux session per chat (`codexbot-<chatId>`)
-- Runs the configured agent command inside tmux and captures the output between markers
-- Captures the pane and extracts text between markers
-- If the agent outputs Codex-style JSON, stores `thread_id` and uses `exec resume` to keep conversation state
-- If audio arrives, downloads it, transcribes with `parakeet-mlx`, and sends the transcript to codex
-- If an image arrives, downloads it into `IMAGE_DIR` and includes its path in the prompt
-- If codex generates an image, it should save it under `IMAGE_DIR` and reply with `[[image:/absolute/path]]` so the bot can send it
 
 ## Template examples
 ```
@@ -105,12 +120,20 @@ CODEX_TEMPLATE=codex exec --json --model gpt-5.2 {prompt}
 CODEX_TEMPLATE=codex exec resume {session} --json {prompt}
 ```
 
-## Notes
-- Defaults to `codex exec --json` (non-interactive). If your CLI does not support it, adjust `CODEX_CMD`, `CODEX_ARGS`, or `CODEX_TEMPLATE`.
-- Keep the bot private or restrict access: each message executes local commands on your machine.
-- Images are only sent back if the returned path is inside `IMAGE_DIR`.
+## Security notes
+This bot executes local commands on your machine. Run it only on trusted hardware, keep the bot private, and avoid sharing the token. There is no built-in allowlist: anyone who can message the bot can execute the configured command.
+
+## How it works
+- Builds a shell command with a base64-encoded prompt to avoid quoting issues
+- Executes the command locally via `bash -lc`
+- If the agent outputs Codex-style JSON, stores `thread_id` and uses `exec resume`
+- Audio is downloaded, transcribed, then forwarded as text
+- Images are downloaded into `IMAGE_DIR` and included in the prompt
 
 ## Troubleshooting
 - `ENOENT parakeet-mlx`: install `parakeet-mlx` and ensure it is on PATH.
-- `Timeout waiting for codex response`: increase `CODEX_TIMEOUT_MS` or reduce load.
+- `Error processing response.`: check the agent command (`CODEX_CMD` / `CODEX_TEMPLATE`) and that it is executable.
 - Telegram `ECONNRESET`: usually transient network, retry.
+
+## License
+MIT. See `LICENSE`.

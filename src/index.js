@@ -40,7 +40,7 @@ const PARAKEET_MODEL = process.env.PARAKEET_MODEL;
 const PARAKEET_TIMEOUT_MS = Number(process.env.PARAKEET_TIMEOUT_MS || 120000);
 
 const IMAGE_DIR = path.resolve(
-  process.env.IMAGE_DIR || path.join(os.tmpdir(), 'telegram-codex', 'images')
+  process.env.IMAGE_DIR || path.join(os.tmpdir(), 'aipal', 'images')
 );
 const IMAGE_TTL_HOURS = Number(process.env.IMAGE_TTL_HOURS || 24);
 const IMAGE_CLEANUP_INTERVAL_MS = Number(
@@ -99,7 +99,7 @@ function startTyping(ctx) {
 
 async function downloadTelegramFile(ctx, payload, options = {}) {
   const {
-    dir = path.join(os.tmpdir(), 'telegram-codex'),
+    dir = path.join(os.tmpdir(), 'aipal'),
     prefix = 'file',
     errorLabel = 'file',
   } = options;
