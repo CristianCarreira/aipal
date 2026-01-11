@@ -1,5 +1,7 @@
 # Aipal: Telegram Codex Bot
 
+![CI](https://github.com/antoniolg/aipal/actions/workflows/ci.yml/badge.svg?branch=main)
+
 ![Aipal](docs/assets/aipal.jpg)
 
 Minimal Telegram bot that forwards messages to a local CLI agent (Codex by default). Each message is executed locally and the output is sent back to the chat.
