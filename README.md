@@ -42,7 +42,7 @@ Open Telegram, send `/start`, then any message.
 - Images: send a photo or image file (caption becomes the prompt)
 - `/reset`: clear the chat session (drops the Codex thread id)
 - `/model <name>`: set the model (persisted in `config.json`)
-- `/thinking <level>`: set thinking level (persisted in `config.json`)
+- `/thinking <level>`: set reasoning effort (mapped to `model_reasoning_effort`, persisted in `config.json`)
 - `/<script> [args]`: run an executable script from `~/.config/aibot/scripts`
 
 ### Images in responses

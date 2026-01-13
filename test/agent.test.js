@@ -7,13 +7,14 @@ test('buildAgentCommand uses exec resume with thread id', () => {
   const command = buildAgentCommand('hello', { threadId: 't-123' });
   assert.match(command, /codex exec resume 't-123'/);
   assert.match(command, /--json/);
+  assert.match(command, /--yolo/);
   assert.match(command, /'hello'/);
 });
 
-test('buildAgentCommand appends model and thinking flags', () => {
+test('buildAgentCommand appends model and reasoning flags', () => {
   const command = buildAgentCommand('ping', { model: 'gpt-5.2', thinking: 'medium' });
   assert.match(command, /--model 'gpt-5.2'/);
-  assert.match(command, /--thinking 'medium'/);
+  assert.match(command, /--config 'model_reasoning_effort="medium"'/);
 });
 
 test('parseAgentOutput extracts thread id and message text', () => {

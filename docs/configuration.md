@@ -16,6 +16,6 @@ This bot stores a minimal JSON config with the values set by `/model` and `/thin
 
 ## Fields
 - `model`: default model name.
-- `thinking`: default thinking level.
+- `thinking`: default reasoning effort (used as `model_reasoning_effort` in Codex).
 
 If the file is missing, both values are unset and the bot uses agent defaults.

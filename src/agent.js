@@ -1,7 +1,7 @@
 const CODEX_CMD = 'codex';
-const BASE_ARGS = '--json --skip-git-repo-check';
+const BASE_ARGS = '--json --skip-git-repo-check --yolo';
 const MODEL_ARG = '--model';
-const THINKING_ARG = '--thinking';
+const REASONING_CONFIG_KEY = 'model_reasoning_effort';
 
 function shellQuote(value) {
   const escaped = String(value).replace(/'/g, String.raw`'\''`);
@@ -18,12 +18,18 @@ function appendOptionalArg(args, flag, value) {
   return `${args} ${flag} ${shellQuote(value)}`.trim();
 }
 
+function appendOptionalReasoning(args, value) {
+  if (!value) return args;
+  const configValue = `${REASONING_CONFIG_KEY}="${value}"`;
+  return `${args} --config ${shellQuote(configValue)}`.trim();
+}
+
 function buildAgentCommand(prompt, options = {}) {
   const { threadId, promptExpression, model, thinking } = options;
   const promptValue = resolvePromptValue(prompt, promptExpression);
   let args = BASE_ARGS;
   args = appendOptionalArg(args, MODEL_ARG, model);
-  args = appendOptionalArg(args, THINKING_ARG, thinking);
+  args = appendOptionalReasoning(args, thinking);
   if (threadId) {
     return `${CODEX_CMD} exec resume ${shellQuote(threadId)} ${args} ${promptValue}`.trim();
   }

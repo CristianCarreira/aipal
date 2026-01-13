@@ -359,19 +359,19 @@ bot.command('thinking', async (ctx) => {
   const value = extractCommandValue(ctx.message.text);
   if (!value) {
     if (globalThinking) {
-      ctx.reply(`Current thinking: ${globalThinking}`);
+      ctx.reply(`Current reasoning effort: ${globalThinking}`);
     } else {
-      ctx.reply('No thinking level set. Use /thinking <level>.');
+      ctx.reply('No reasoning effort set. Use /thinking <level>.');
     }
     return;
   }
   try {
     globalThinking = value;
     await updateConfig({ thinking: value });
-    ctx.reply(`Thinking level set to ${value}.`);
+    ctx.reply(`Reasoning effort set to ${value}.`);
   } catch (err) {
     console.error(err);
-    await replyWithError(ctx, 'Failed to persist thinking level.', err);
+    await replyWithError(ctx, 'Failed to persist reasoning effort.', err);
   }
 });
 
