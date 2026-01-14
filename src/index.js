@@ -327,6 +327,22 @@ async function replyWithResponse(ctx, response) {
   }
 }
 
+async function replyWithTranscript(ctx, transcript, replyToMessageId) {
+  const header = 'Transcript:';
+  const text = String(transcript || '').trim();
+  const replyOptions = replyToMessageId ? { reply_to_message_id: replyToMessageId } : undefined;
+  if (!text) {
+    await ctx.reply(`${header}\n(vacía)`, replyOptions);
+    return;
+  }
+  const maxChunkSize = Math.max(1, 3500 - header.length - 1);
+  const chunks = chunkText(text, maxChunkSize);
+  for (let i = 0; i < chunks.length; i += 1) {
+    const prefix = i === 0 ? `${header}\n` : '';
+    await ctx.reply(`${prefix}${chunks[i]}`, replyOptions);
+  }
+}
+
 function enqueue(chatId, fn) {
   const prev = queues.get(chatId) || Promise.resolve();
   const next = prev.then(fn).catch((err) => {
@@ -439,6 +455,7 @@ bot.on(['voice', 'audio', 'document'], (ctx) => {
       });
       const { text, outputPath } = await transcribeWithParakeet(audioPath);
       transcriptPath = outputPath;
+      await replyWithTranscript(ctx, text, ctx.message?.message_id);
       if (!text) {
         await ctx.reply("I couldn't transcribe the audio.");
         return;
