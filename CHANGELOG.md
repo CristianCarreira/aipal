@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.8] - 2026-01-26
+### Added
+- `ALLOWED_USERS` environment variable to restrict bot access to an allowlist of Telegram user IDs.
+- `/help` command to list built-in commands and executable scripts.
+- `/document_scripts confirm` command to generate short script descriptions and persist them to `scripts.json`.
+- `opencode` agent integration.
+- `/model` command to view/set the model for the current agent (persisted in `config.json`).
+
+### Changed
+- If an agent exits non-zero but produces usable stdout, the bot returns that output instead of failing hard.
+
+### Documentation
+- Fixed `AIPAL_SCRIPTS_DIR` default path typo.
+- Thanks @JcMinarro for the contributions in this release.
+
 ## [0.1.7] - 2026-01-25
 ### Added
 - Internal cron scheduler for scheduled tasks within the same bot session.
