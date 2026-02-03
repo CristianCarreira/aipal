@@ -54,6 +54,25 @@ Open Telegram, send `/start`, then any message.
 - `/document_scripts confirm`: generate short descriptions for scripts (writes `scripts.json`; requires `ALLOWED_USERS`)
 - `/<script> [args]`: run an executable script from `~/.config/aipal/scripts`
 
+### Script metadata (scripts.json)
+Scripts can define metadata in `scripts.json` (stored inside `AIPAL_SCRIPTS_DIR`) to add descriptions or LLM post-processing.
+
+Example:
+```json
+{
+  "scripts": {
+    "xbrief": {
+      "description": "Filter briefing to AI/LLMs",
+      "llm": {
+        "prompt": "Filter the briefing to keep only AI and LLM items.\nRemove everything that is not AI without inventing or omitting anything relevant.\nMerge duplicates (same link or same content).\nKeep all sections and preserve links in [link](...) format.\nIf a section ends up empty, mark it as \"(No results)\".\nRespond in Spanish, direct and without filler."
+      }
+    }
+  }
+}
+```
+
+If `llm.prompt` is present, the script output is passed to the agent as context and the bot replies with the LLM response (not the raw output).
+
 ### Telegram Topics
 Aipal supports Telegram Topics. Sessions and agent overrides are kept per-topic.
 - Messages in the main chat ("root") have their own sessions.

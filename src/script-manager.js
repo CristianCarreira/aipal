@@ -59,10 +59,17 @@ class ScriptManager {
         name,
         description: meta.description || null,
         args: meta.args || [],
+        llm: meta.llm || null,
       });
     }
 
     return results;
+  }
+
+  async getScriptMetadata(name) {
+    const metadata = await this._readScriptsJson();
+    const knownScripts = metadata.scripts || {};
+    return knownScripts[name] || {};
   }
 
   async getScriptContent(name) {

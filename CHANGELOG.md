@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-02-03
+### Added
+- LLM post-processing for slash scripts via `scripts.json` metadata (`llm.prompt`).
+- `/help` marks scripts that use LLM post-processing with an `[LLM]` tag.
+
+### Changed
+- Slash commands can now route output through the agent based on script metadata.
+- Removed the hardcoded `/xbrief` handler in favor of metadata-driven behavior.
+
+### Documentation
+- Documented `llm.prompt` usage for scripts.
+
 ## [0.1.8] - 2026-01-26
 ### Added
 - `ALLOWED_USERS` environment variable to restrict bot access to an allowlist of Telegram user IDs.

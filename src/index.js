@@ -18,7 +18,6 @@ const {
   CONFIG_PATH,
   MEMORY_PATH,
   SOUL_PATH,
-  AGENT_OVERRIDES_PATH,
   loadAgentOverrides,
   loadThreads,
   readConfig,
@@ -186,8 +185,9 @@ bot.command('help', async (ctx) => {
   }
 
   const scriptLines = scripts.map((s) => {
+    const llmTag = s.llm?.prompt ? ' [LLM]' : '';
     const desc = s.description ? ` - ${s.description}` : '';
-    return `- /${s.name}${desc}`;
+    return `- /${s.name}${llmTag}${desc}`;
   });
 
   const messageMd = [
@@ -1030,41 +1030,32 @@ bot.on('text', (ctx) => {
     ) {
       return;
     }
-    if (normalized === 'xbrief') {
-      enqueue(chatId, async () => {
-        const stopTyping = startTyping(ctx);
+    enqueue(chatId, async () => {
+      const stopTyping = startTyping(ctx);
+      try {
+        let scriptMeta = {};
         try {
-          const output = await runScriptCommand(slash.name, slash.args);
+          scriptMeta = await scriptManager.getScriptMetadata(slash.name);
+        } catch (err) {
+          console.error('Failed to read script metadata', err);
+          scriptMeta = {};
+        }
+        const output = await runScriptCommand(slash.name, slash.args);
+        const llmPrompt =
+          typeof scriptMeta?.llm?.prompt === 'string' ? scriptMeta.llm.prompt.trim() : '';
+        if (llmPrompt) {
           const scriptContext = formatScriptContext({
             name: slash.name,
             output,
           });
-          const prompt = [
-            'Filtra el briefing para quedarte solo con IA y LLMs.',
-            'Elimina todo lo que no sea IA, sin inventar ni omitir lo relevante.',
-            'Fusiona duplicados (mismo link o mismo contenido).',
-            'Mantén todas las secciones, y conserva los links en formato [link](...).',
-            'Si una sección queda vacía, indícalo como "(Sin resultados)".',
-            'Responde en español, directo y sin relleno.',
-          ].join('\n');
-          const response = await runAgentForChat(chatId, prompt, {
+          const response = await runAgentForChat(chatId, llmPrompt, {
             topicId,
             scriptContext,
           });
           stopTyping();
           await replyWithResponse(ctx, response);
-        } catch (err) {
-          console.error(err);
-          stopTyping();
-          await replyWithError(ctx, `Error running /${slash.name}.`, err);
+          return;
         }
-      });
-      return;
-    }
-    enqueue(chatId, async () => {
-      const stopTyping = startTyping(ctx);
-      try {
-        const output = await runScriptCommand(slash.name, slash.args);
         lastScriptOutputs.set(topicKey, { name: slash.name, output });
         stopTyping();
         await replyWithResponse(ctx, output);
