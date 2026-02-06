@@ -19,6 +19,7 @@ Minimal Telegram bot that forwards messages to a local CLI agent (Codex by defau
 - Agent CLI on PATH (default: `codex`, or `claude` / `gemini` / `opencode` when configured)
 - Audio (optional): `parakeet-mlx` + `ffmpeg`
 - TTS audio (optional, macOS): `say` + `afconvert` (built-in)
+- TTS audio (optional, advanced): Python + `chatterbox-tts`
 
 ## Quick start
 ```bash
@@ -113,7 +114,31 @@ Optional:
 - `AIPAL_TTS_VOICE`: voice for TTS replies (default: `Monica`)
 - `AIPAL_TTS_RATE_WPM`: speech rate for TTS (default: `190`)
 - `AIPAL_TTS_MAX_CHARS`: max characters converted to TTS (default: `4000`)
+- `AIPAL_TTS_BACKEND`: `say`, `chatterbox`, or `auto` (default: `say`)
+- `AIPAL_TTS_CHATTERBOX_PYTHON_BIN`: Python executable for Chatterbox (default: `python3`)
+- `AIPAL_TTS_CHATTERBOX_MODEL`: `turbo`, `standard`, or `multilingual` (default: `turbo`)
+- `AIPAL_TTS_CHATTERBOX_DEVICE`: `mps`, `cpu`, or `cuda` (default: `mps` on macOS, else `cpu`)
+- `AIPAL_TTS_CHATTERBOX_TIMEOUT_MS`: timeout for Chatterbox synthesis (default: `240000`)
+- `AIPAL_TTS_CHATTERBOX_REF_AUDIO_PATH`: optional reference audio for voice cloning
 - `ALLOWED_USERS`: comma-separated list of Telegram user IDs allowed to interact with the bot (if unset/empty, bot is open to everyone)
+
+### Advanced TTS (Chatterbox)
+Install:
+
+```bash
+python3 -m pip install chatterbox-tts
+```
+
+Then enable it in `.env`:
+
+```bash
+AIPAL_TTS_BACKEND=auto
+# optional:
+# AIPAL_TTS_CHATTERBOX_MODEL=turbo
+# AIPAL_TTS_CHATTERBOX_DEVICE=mps
+```
+
+With `AIPAL_TTS_BACKEND=auto`, the bot tries `chatterbox` first and falls back to `say` if unavailable.
 
 ## Config file (optional)
 The bot stores `/agent` in a JSON file at:
