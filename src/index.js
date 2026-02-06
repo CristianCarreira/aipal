@@ -69,6 +69,11 @@ const {
   createAccessControlMiddleware,
   parseAllowedUsersEnv,
 } = require('./access-control');
+const {
+  normalizeTextForTts,
+  normalizeTtsBackend,
+  preferredTtsBackends,
+} = require('./tts-utils');
 
 const { ScriptManager } = require('./script-manager');
 const { prefixTextWithTimestamp, DEFAULT_TIME_ZONE } = require('./time-utils');
@@ -146,6 +151,20 @@ const SHUTDOWN_DRAIN_TIMEOUT_MS = readNumberEnv(
 const TTS_VOICE = process.env.AIPAL_TTS_VOICE || 'Monica';
 const TTS_RATE_WPM = readNumberEnv(process.env.AIPAL_TTS_RATE_WPM, 190);
 const TTS_MAX_CHARS = readNumberEnv(process.env.AIPAL_TTS_MAX_CHARS, 4000);
+const TTS_BACKEND = normalizeTtsBackend(process.env.AIPAL_TTS_BACKEND || 'say');
+const TTS_CHATTERBOX_PYTHON_BIN =
+  process.env.AIPAL_TTS_CHATTERBOX_PYTHON_BIN || 'python3';
+const TTS_CHATTERBOX_MODEL =
+  process.env.AIPAL_TTS_CHATTERBOX_MODEL || 'turbo';
+const TTS_CHATTERBOX_DEVICE =
+  process.env.AIPAL_TTS_CHATTERBOX_DEVICE ||
+  (process.platform === 'darwin' ? 'mps' : 'cpu');
+const TTS_CHATTERBOX_TIMEOUT_MS = readNumberEnv(
+  process.env.AIPAL_TTS_CHATTERBOX_TIMEOUT_MS,
+  240000
+);
+const TTS_CHATTERBOX_REF_AUDIO_PATH =
+  process.env.AIPAL_TTS_CHATTERBOX_REF_AUDIO_PATH || '';
 const SCRIPT_NAME_REGEX = /^[A-Za-z0-9_-]+$/;
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -615,19 +634,6 @@ function startTtsCleanup() {
   }
 }
 
-function normalizeTextForTts(text) {
-  return String(text || '')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/\*([^*\n]+)\*/g, '$1')
-    .replace(/_([^_\n]+)_/g, '$1')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 async function synthesizeWithSay(text) {
   const clean = normalizeTextForTts(text);
   if (!clean) return null;
@@ -652,6 +658,113 @@ async function synthesizeWithSay(text) {
     console.warn('Failed to convert AIFF to M4A, sending AIFF:', err?.message || err);
     return aiffPath;
   }
+}
+
+async function synthesizeWithChatterbox(text) {
+  const clean = normalizeTextForTts(text);
+  if (!clean) return null;
+  const finalText = clean.slice(0, TTS_MAX_CHARS);
+
+  await fs.mkdir(TTS_DIR, { recursive: true });
+  const id = randomUUID();
+  const inputPath = path.join(TTS_DIR, `tts-${id}.txt`);
+  const wavPath = path.join(TTS_DIR, `tts-${id}.wav`);
+  const m4aPath = path.join(TTS_DIR, `tts-${id}.m4a`);
+  await fs.writeFile(inputPath, finalText, 'utf8');
+
+  const pythonCode = [
+    'import os, sys',
+    'import torch',
+    'import torchaudio as ta',
+    '',
+    'text_path, out_path, model_name, forced_device, ref_path = sys.argv[1:6]',
+    "with open(text_path, 'r', encoding='utf-8') as f:",
+    '    text = f.read().strip()',
+    '',
+    'if not text:',
+    "    raise RuntimeError('Empty TTS input')",
+    '',
+    'device = forced_device.strip() if forced_device else ""',
+    'if not device:',
+    "    device = 'mps' if torch.backends.mps.is_available() else 'cpu'",
+    '',
+    'kwargs = {}',
+    'if ref_path and os.path.exists(ref_path):',
+    "    kwargs['audio_prompt_path'] = ref_path",
+    '',
+    "if model_name == 'turbo':",
+    '    from chatterbox.tts_turbo import ChatterboxTurboTTS as Model',
+    "elif model_name == 'multilingual':",
+    '    from chatterbox.mtl_tts import ChatterboxMultilingualTTS as Model',
+    'else:',
+    '    from chatterbox.tts import ChatterboxTTS as Model',
+    '',
+    'model = Model.from_pretrained(device=device)',
+    'wav = model.generate(text, **kwargs)',
+    'ta.save(out_path, wav, model.sr)',
+  ].join('\n');
+
+  try {
+    await execLocal(
+      TTS_CHATTERBOX_PYTHON_BIN,
+      [
+        '-c',
+        pythonCode,
+        inputPath,
+        wavPath,
+        String(TTS_CHATTERBOX_MODEL || 'turbo').toLowerCase(),
+        TTS_CHATTERBOX_DEVICE,
+        TTS_CHATTERBOX_REF_AUDIO_PATH,
+      ],
+      {
+        timeout: TTS_CHATTERBOX_TIMEOUT_MS,
+        maxBuffer: 8 * 1024 * 1024,
+      }
+    );
+  } finally {
+    await safeUnlink(inputPath);
+  }
+
+  try {
+    await execLocal('afconvert', ['-f', 'm4af', '-d', 'aac', wavPath, m4aPath], {
+      timeout: 120000,
+      maxBuffer: 1024 * 1024,
+    });
+    await safeUnlink(wavPath);
+    return m4aPath;
+  } catch (err) {
+    console.warn(
+      'Failed to convert Chatterbox WAV to M4A, sending WAV:',
+      err?.message || err
+    );
+    return wavPath;
+  }
+}
+
+async function synthesizeAudio(text) {
+  const backends = preferredTtsBackends(TTS_BACKEND);
+  let lastError = null;
+
+  for (const backend of backends) {
+    try {
+      if (backend === 'chatterbox') {
+        const audioPath = await synthesizeWithChatterbox(text);
+        if (audioPath) return audioPath;
+      } else if (backend === 'say') {
+        const audioPath = await synthesizeWithSay(text);
+        if (audioPath) return audioPath;
+      }
+    } catch (err) {
+      lastError = err;
+      console.warn(
+        `TTS backend ${backend} failed, trying next backend if available:`,
+        err?.message || err
+      );
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
 }
 
 async function runAgentOneShot(prompt) {
@@ -865,7 +978,7 @@ async function replyWithResponse(ctx, response, options = {}) {
   if (shouldSendAudio && text) {
     let audioPath;
     try {
-      audioPath = await synthesizeWithSay(text);
+      audioPath = await synthesizeAudio(text);
       if (audioPath) {
         await ctx.replyWithAudio({ source: audioPath });
       }
@@ -1123,7 +1236,7 @@ bot.command('tts', async (ctx) => {
     const stopTyping = startTyping(ctx);
     let audioPath;
     try {
-      audioPath = await synthesizeWithSay(text);
+      audioPath = await synthesizeAudio(text);
       if (!audioPath) {
         await ctx.reply('No hay texto para convertir a audio.');
         return;
@@ -1132,7 +1245,9 @@ bot.command('tts', async (ctx) => {
     } catch (err) {
       console.error(err);
       if (err && err.code === 'ENOENT') {
-        await ctx.reply('No encuentro `say`/`afconvert` en este sistema para TTS.');
+        await ctx.reply(
+          'No encuentro el backend TTS configurado (`say` o `chatterbox`) en este sistema.'
+        );
       } else {
         await replyWithError(ctx, 'Error generating TTS audio.', err);
       }
@@ -1397,7 +1512,7 @@ async function sendResponseToChat(chatId, response, options = {}) {
   if (shouldSendAudio && text) {
     let audioPath;
     try {
-      audioPath = await synthesizeWithSay(text);
+      audioPath = await synthesizeAudio(text);
       if (audioPath) {
         await bot.telegram.sendAudio(chatId, { source: audioPath });
       }
