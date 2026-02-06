@@ -92,3 +92,30 @@ test('saveThreads writes and loadThreads reads threads', async () => {
   const raw = await fs.readFile(THREADS_PATH, 'utf8');
   assert.deepEqual(JSON.parse(raw), { 123: 'thread-123', '-456': 'thread-456' });
 });
+
+test('loadVoiceOverrides returns empty map when file is missing', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-config-'));
+  const { loadVoiceOverrides } = loadConfigStore(dir);
+  const overrides = await loadVoiceOverrides();
+  assert.equal(overrides.size, 0);
+});
+
+test('saveVoiceOverrides writes and loadVoiceOverrides reads overrides', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-config-'));
+  const { loadVoiceOverrides, saveVoiceOverrides, VOICE_OVERRIDES_PATH } =
+    loadConfigStore(dir);
+
+  const input = new Map([
+    ['123:root', 'on'],
+    ['123:456', 'off'],
+  ]);
+  await saveVoiceOverrides(input);
+
+  const loaded = await loadVoiceOverrides();
+  assert.equal(loaded.size, 2);
+  assert.equal(loaded.get('123:root'), 'on');
+  assert.equal(loaded.get('123:456'), 'off');
+
+  const raw = await fs.readFile(VOICE_OVERRIDES_PATH, 'utf8');
+  assert.deepEqual(JSON.parse(raw), { '123:root': 'on', '123:456': 'off' });
+});

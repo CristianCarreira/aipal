@@ -19,11 +19,13 @@ const {
   MEMORY_PATH,
   SOUL_PATH,
   loadAgentOverrides,
+  loadVoiceOverrides,
   loadThreads,
   readConfig,
   readMemory,
   readSoul,
   saveAgentOverrides,
+  saveVoiceOverrides,
   saveThreads,
   updateConfig,
 } = require('./config-store');
@@ -32,6 +34,10 @@ const {
   getAgentOverride,
   setAgentOverride,
 } = require('./agent-overrides');
+const {
+  isVoiceModeEnabled,
+  setVoiceOverride,
+} = require('./voice-overrides');
 const {
   buildTopicKey,
   clearThreadForAgent,
@@ -110,6 +116,9 @@ const IMAGE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const DOCUMENT_DIR = path.resolve(path.join(os.tmpdir(), 'aipal', 'documents'));
 const DOCUMENT_TTL_HOURS = 24;
 const DOCUMENT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const TTS_DIR = path.resolve(path.join(os.tmpdir(), 'aipal', 'tts'));
+const TTS_TTL_HOURS = 24;
+const TTS_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 const SCRIPTS_DIR =
   process.env.AIPAL_SCRIPTS_DIR ||
@@ -134,6 +143,9 @@ const SHUTDOWN_DRAIN_TIMEOUT_MS = readNumberEnv(
   process.env.AIPAL_SHUTDOWN_DRAIN_TIMEOUT_MS,
   120000
 );
+const TTS_VOICE = process.env.AIPAL_TTS_VOICE || 'Monica';
+const TTS_RATE_WPM = readNumberEnv(process.env.AIPAL_TTS_RATE_WPM, 190);
+const TTS_MAX_CHARS = readNumberEnv(process.env.AIPAL_TTS_MAX_CHARS, 4000);
 const SCRIPT_NAME_REGEX = /^[A-Za-z0-9_-]+$/;
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -164,6 +176,8 @@ let threads = new Map();
 let threadsPersist = Promise.resolve();
 let agentOverrides = new Map();
 let agentOverridesPersist = Promise.resolve();
+let voiceOverrides = new Map();
+let voiceOverridesPersist = Promise.resolve();
 const threadTurns = new Map();
 const lastScriptOutputs = new Map();
 const SCRIPT_CONTEXT_MAX_CHARS = 8000;
@@ -179,6 +193,8 @@ bot.command('help', async (ctx) => {
     '/agent <name> - Switch agent (codex, claude, gemini, opencode)',
     '/thinking <level> - Set reasoning effort',
     '/model [model_id] - View/set model for current agent',
+    '/voice <on|off|status> - Enable/disable audio replies in this topic',
+    '/tts <text> - Convert text to audio (or reply to a text message with /tts)',
     '/reset - Reset current agent session',
     '/cron [list|reload|chatid] - Manage cron jobs',
     '/help - Show this help',
@@ -313,6 +329,13 @@ function persistAgentOverrides() {
     .catch(() => {})
     .then(() => saveAgentOverrides(agentOverrides));
   return agentOverridesPersist;
+}
+
+function persistVoiceOverrides() {
+  voiceOverridesPersist = voiceOverridesPersist
+    .catch(() => {})
+    .then(() => saveVoiceOverrides(voiceOverrides));
+  return voiceOverridesPersist;
 }
 
 async function buildBootstrapContext() {
@@ -579,6 +602,58 @@ function startDocumentCleanup() {
   }
 }
 
+function startTtsCleanup() {
+  if (!Number.isFinite(TTS_TTL_HOURS) || TTS_TTL_HOURS <= 0) return;
+  const maxAgeMs = TTS_TTL_HOURS * 60 * 60 * 1000;
+  const run = () => cleanupOldFiles(TTS_DIR, maxAgeMs, 'TTS');
+  run();
+  if (Number.isFinite(TTS_CLEANUP_INTERVAL_MS) && TTS_CLEANUP_INTERVAL_MS > 0) {
+    const timer = setInterval(run, TTS_CLEANUP_INTERVAL_MS);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  }
+}
+
+function normalizeTextForTts(text) {
+  return String(text || '')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/_([^_\n]+)_/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function synthesizeWithSay(text) {
+  const clean = normalizeTextForTts(text);
+  if (!clean) return null;
+  const finalText = clean.slice(0, TTS_MAX_CHARS);
+  await fs.mkdir(TTS_DIR, { recursive: true });
+  const id = randomUUID();
+  const aiffPath = path.join(TTS_DIR, `tts-${id}.aiff`);
+  const m4aPath = path.join(TTS_DIR, `tts-${id}.m4a`);
+  await execLocal('say', ['-v', TTS_VOICE, '-r', String(TTS_RATE_WPM), '-o', aiffPath, finalText], {
+    timeout: 120000,
+    maxBuffer: 1024 * 1024,
+  });
+
+  try {
+    await execLocal('afconvert', ['-f', 'm4af', '-d', 'aac', aiffPath, m4aPath], {
+      timeout: 120000,
+      maxBuffer: 1024 * 1024,
+    });
+    await safeUnlink(aiffPath);
+    return m4aPath;
+  } catch (err) {
+    console.warn('Failed to convert AIFF to M4A, sending AIFF:', err?.message || err);
+    return aiffPath;
+  }
+}
+
 async function runAgentOneShot(prompt) {
   const agent = getAgent(globalAgent);
   const thinking = globalThinking;
@@ -766,7 +841,8 @@ async function runAgentForChat(chatId, prompt, options = {}) {
   return parsed.text || output;
 }
 
-async function replyWithResponse(ctx, response) {
+async function replyWithResponse(ctx, response, options = {}) {
+  const { chatId, topicId, forceTts = false } = options;
   const { cleanedText: afterImages, imagePaths } = extractImageTokens(
     response || '',
     IMAGE_DIR
@@ -780,6 +856,24 @@ async function replyWithResponse(ctx, response) {
     for (const chunk of chunkMarkdown(text, 3000)) {
       const formatted = markdownToTelegramHtml(chunk) || chunk;
       await ctx.reply(formatted, { parse_mode: 'HTML', disable_web_page_preview: true });
+    }
+  }
+
+  const shouldSendAudio =
+    forceTts ||
+    (chatId !== undefined && isVoiceModeEnabled(voiceOverrides, chatId, topicId));
+  if (shouldSendAudio && text) {
+    let audioPath;
+    try {
+      audioPath = await synthesizeWithSay(text);
+      if (audioPath) {
+        await ctx.replyWithAudio({ source: audioPath });
+      }
+    } catch (err) {
+      console.warn('Failed to synthesize/send TTS:', err);
+      await ctx.reply('No pude generar audio (TTS) para esta respuesta.');
+    } finally {
+      await safeUnlink(audioPath);
     }
   }
   const uniqueImages = Array.from(new Set(imagePaths));
@@ -984,6 +1078,71 @@ bot.command('model', async (ctx) => {
   }
 });
 
+bot.command('voice', async (ctx) => {
+  const value = extractCommandValue(ctx.message.text).toLowerCase();
+  const chatId = ctx.chat.id;
+  const topicId = getTopicId(ctx);
+  const topicLabel = normalizeTopicId(topicId);
+
+  if (!value || value === 'status') {
+    const enabled = isVoiceModeEnabled(voiceOverrides, chatId, topicId);
+    await ctx.reply(
+      `Voice mode (${topicLabel}): ${enabled ? 'ON' : 'OFF'}. Use /voice on or /voice off.`,
+    );
+    return;
+  }
+
+  if (!['on', 'off'].includes(value)) {
+    await ctx.reply('Usage: /voice <on|off|status>');
+    return;
+  }
+
+  setVoiceOverride(voiceOverrides, chatId, topicId, value === 'on');
+  persistVoiceOverrides().catch((err) =>
+    console.warn('Failed to persist voice overrides:', err),
+  );
+  await ctx.reply(
+    `Voice mode (${topicLabel}) set to ${value.toUpperCase()}.`,
+  );
+});
+
+bot.command('tts', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const providedText = extractCommandValue(ctx.message.text);
+  const repliedText =
+    ctx.message?.reply_to_message?.text ||
+    ctx.message?.reply_to_message?.caption ||
+    '';
+  const text = String(providedText || repliedText || '').trim();
+  if (!text) {
+    await ctx.reply('Usage: /tts <texto> o responde a un mensaje con /tts');
+    return;
+  }
+
+  enqueue(chatId, async () => {
+    const stopTyping = startTyping(ctx);
+    let audioPath;
+    try {
+      audioPath = await synthesizeWithSay(text);
+      if (!audioPath) {
+        await ctx.reply('No hay texto para convertir a audio.');
+        return;
+      }
+      await ctx.replyWithAudio({ source: audioPath });
+    } catch (err) {
+      console.error(err);
+      if (err && err.code === 'ENOENT') {
+        await ctx.reply('No encuentro `say`/`afconvert` en este sistema para TTS.');
+      } else {
+        await replyWithError(ctx, 'Error generating TTS audio.', err);
+      }
+    } finally {
+      stopTyping();
+      await safeUnlink(audioPath);
+    }
+  });
+});
+
 bot.command('cron', async (ctx) => {
   const value = extractCommandValue(ctx.message.text);
   const parts = value ? value.split(/\s+/) : [];
@@ -1041,6 +1200,8 @@ bot.on('text', (ctx) => {
         'thinking',
         'agent',
         'model',
+        'voice',
+        'tts',
         'reset',
         'cron',
         'help',
@@ -1072,12 +1233,12 @@ bot.on('text', (ctx) => {
             scriptContext,
           });
           stopTyping();
-          await replyWithResponse(ctx, response);
+          await replyWithResponse(ctx, response, { chatId, topicId });
           return;
         }
         lastScriptOutputs.set(topicKey, { name: slash.name, output });
         stopTyping();
-        await replyWithResponse(ctx, output);
+        await replyWithResponse(ctx, output, { chatId, topicId });
       } catch (err) {
         console.error(err);
         stopTyping();
@@ -1096,7 +1257,7 @@ bot.on('text', (ctx) => {
         scriptContext,
       });
       stopTyping();
-      await replyWithResponse(ctx, response);
+      await replyWithResponse(ctx, response, { chatId, topicId });
     } catch (err) {
       console.error(err);
       stopTyping();
@@ -1128,7 +1289,7 @@ bot.on(['voice', 'audio', 'document'], (ctx, next) => {
         return;
       }
       const response = await runAgentForChat(chatId, text, { topicId });
-      await replyWithResponse(ctx, response);
+      await replyWithResponse(ctx, response, { chatId, topicId });
     } catch (err) {
       console.error(err);
       if (err && err.code === 'ENOENT') {
@@ -1169,7 +1330,7 @@ bot.on(['photo', 'document'], (ctx, next) => {
         topicId,
         imagePaths: [imagePath],
       });
-      await replyWithResponse(ctx, response);
+      await replyWithResponse(ctx, response, { chatId, topicId });
     } catch (err) {
       console.error(err);
       await replyWithError(ctx, 'Error processing image.', err);
@@ -1201,7 +1362,7 @@ bot.on('document', (ctx) => {
         topicId,
         documentPaths: [documentPath],
       });
-      await replyWithResponse(ctx, response);
+      await replyWithResponse(ctx, response, { chatId, topicId });
     } catch (err) {
       console.error(err);
       await replyWithError(ctx, 'Error processing document.', err);
@@ -1211,7 +1372,8 @@ bot.on('document', (ctx) => {
   });
 });
 
-async function sendResponseToChat(chatId, response) {
+async function sendResponseToChat(chatId, response, options = {}) {
+  const { topicId, forceTts = false } = options;
   const { cleanedText: afterImages, imagePaths } = extractImageTokens(
     response || '',
     IMAGE_DIR
@@ -1228,6 +1390,22 @@ async function sendResponseToChat(chatId, response) {
         parse_mode: 'HTML',
         disable_web_page_preview: true,
       });
+    }
+  }
+  const shouldSendAudio =
+    forceTts || isVoiceModeEnabled(voiceOverrides, chatId, topicId);
+  if (shouldSendAudio && text) {
+    let audioPath;
+    try {
+      audioPath = await synthesizeWithSay(text);
+      if (audioPath) {
+        await bot.telegram.sendAudio(chatId, { source: audioPath });
+      }
+    } catch (err) {
+      console.warn('Failed to synthesize/send TTS:', err);
+      await bot.telegram.sendMessage(chatId, 'No pude generar audio (TTS) para esta respuesta.');
+    } finally {
+      await safeUnlink(audioPath);
     }
   }
   const uniqueImages = Array.from(new Set(imagePaths));
@@ -1273,6 +1451,7 @@ async function handleCronTrigger(chatId, prompt, options = {}) {
 
 startImageCleanup();
 startDocumentCleanup();
+startTtsCleanup();
 loadThreads()
   .then((loaded) => {
     threads = loaded;
@@ -1285,6 +1464,12 @@ loadAgentOverrides()
     console.info(`Loaded ${agentOverrides.size} agent override(s) from disk`);
   })
   .catch((err) => console.warn('Failed to load agent overrides:', err));
+loadVoiceOverrides()
+  .then((loaded) => {
+    voiceOverrides = loaded;
+    console.info(`Loaded ${voiceOverrides.size} voice override(s) from disk`);
+  })
+  .catch((err) => console.warn('Failed to load voice overrides:', err));
 hydrateGlobalSettings()
   .then((config) => {
     if (config.cronChatId) {
@@ -1336,7 +1521,7 @@ function shutdown(signal) {
         ]);
       }
       await Promise.race([
-        Promise.allSettled([threadsPersist, agentOverridesPersist]),
+        Promise.allSettled([threadsPersist, agentOverridesPersist, voiceOverridesPersist]),
         new Promise((resolve) => setTimeout(resolve, 2000)),
       ]);
     })
