@@ -521,8 +521,9 @@ async function transcribeAudio(audioPath) {
     '--output-dir', outputDir,
     '--output-format', 'txt',
     '--output-name', outputName,
-    '--hallucination_silence_threshold', '2',
-    '--condition_on_previous_text', 'False',
+    '--condition-on-previous-text', 'False',
+    '--word-timestamps', 'True',
+    '--hallucination-silence-threshold', '2',
   ];
   await execLocal(WHISPER_CMD, args, { timeout: WHISPER_TIMEOUT_MS });
   const outputPath = path.join(outputDir, `${outputName}.txt`);
@@ -1261,8 +1262,10 @@ async function handleCronTrigger(chatId, prompt, options = {}) {
   try {
     await bot.telegram.sendChatAction(chatId, 'typing');
     const response = await runAgentForChat(chatId, prompt, { agentId: agent });
-    if (response.includes('HEARTBEAT_OK')) {
-      console.info(`Cron job ${jobId}: HEARTBEAT_OK (silent)`);
+    const silentTokens = ['HEARTBEAT_OK', 'CURATION_EMPTY'];
+    const matchedToken = silentTokens.find(t => response.includes(t));
+    if (matchedToken) {
+      console.info(`Cron job ${jobId}: ${matchedToken} (silent)`);
       return;
     }
     await sendResponseToChat(chatId, response);
