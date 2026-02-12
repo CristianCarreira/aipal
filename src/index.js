@@ -33,11 +33,19 @@ const {
   setAgentOverride,
 } = require('./agent-overrides');
 const {
+  buildThreadKey,
   buildTopicKey,
   clearThreadForAgent,
   normalizeTopicId,
   resolveThreadId,
 } = require('./thread-store');
+const {
+  appendMemoryEvent,
+  buildThreadBootstrap,
+  curateMemory,
+  getMemoryStatus,
+  getThreadTail,
+} = require('./memory-store');
 const {
   loadCronJobs,
   saveCronJobs,
@@ -133,6 +141,10 @@ const FILE_INSTRUCTIONS_EVERY = readNumberEnv(
   process.env.AIPAL_FILE_INSTRUCTIONS_EVERY,
   10
 );
+const MEMORY_CURATE_EVERY = readNumberEnv(
+  process.env.AIPAL_MEMORY_CURATE_EVERY,
+  20
+);
 const SHUTDOWN_DRAIN_TIMEOUT_MS = readNumberEnv(
   process.env.AIPAL_SHUTDOWN_DRAIN_TIMEOUT_MS,
   120000
@@ -167,9 +179,11 @@ let threads = new Map();
 let threadsPersist = Promise.resolve();
 let agentOverrides = new Map();
 let agentOverridesPersist = Promise.resolve();
+let memoryPersist = Promise.resolve();
 const threadTurns = new Map();
 const lastScriptOutputs = new Map();
 const SCRIPT_CONTEXT_MAX_CHARS = 8000;
+let memoryEventsSinceCurate = 0;
 let globalThinking;
 let globalAgent = AGENT_CODEX;
 let globalModels = {};
@@ -182,6 +196,7 @@ bot.command('help', async (ctx) => {
     '/agent <name> - Switch agent (codex, claude, gemini, opencode)',
     '/thinking <level> - Set reasoning effort',
     '/model [model_id] - View/set model for current agent',
+    '/memory [status|tail|curate] - Memory capture + curation',
     '/reset - Reset current agent session',
     '/cron [list|reload|chatid] - Manage cron jobs',
     '/help - Show this help',
@@ -318,7 +333,63 @@ function persistAgentOverrides() {
   return agentOverridesPersist;
 }
 
-async function buildBootstrapContext() {
+function persistMemory(task) {
+  memoryPersist = memoryPersist
+    .catch(() => {})
+    .then(task);
+  return memoryPersist;
+}
+
+function resolveEffectiveAgentId(chatId, topicId, overrideAgentId) {
+  return (
+    overrideAgentId ||
+    getAgentOverride(agentOverrides, chatId, topicId) ||
+    globalAgent
+  );
+}
+
+function buildMemoryThreadKey(chatId, topicId, agentId) {
+  return buildThreadKey(chatId, normalizeTopicId(topicId), agentId);
+}
+
+function extractMemoryText(response) {
+  const { cleanedText: withoutImages } = extractImageTokens(
+    response || '',
+    IMAGE_DIR
+  );
+  const { cleanedText } = extractDocumentTokens(withoutImages, DOCUMENT_DIR);
+  return String(cleanedText || '').trim();
+}
+
+function maybeAutoCurateMemory() {
+  memoryEventsSinceCurate += 1;
+  if (memoryEventsSinceCurate < MEMORY_CURATE_EVERY) return;
+  memoryEventsSinceCurate = 0;
+  persistMemory(async () => {
+    try {
+      const result = await curateMemory();
+      console.info(
+        `Auto-curated memory events=${result.eventsProcessed} bytes=${result.bytes}`
+      );
+    } catch (err) {
+      console.warn('Auto memory curation failed:', err);
+    }
+  }).catch((err) => {
+    console.warn('Failed to schedule auto memory curation:', err);
+  });
+}
+
+async function captureMemoryEvent(event) {
+  try {
+    await appendMemoryEvent(event);
+    maybeAutoCurateMemory();
+  } catch (err) {
+    console.warn('Failed to append memory event:', err);
+  }
+}
+
+async function buildBootstrapContext(options = {}) {
+  const { threadKey } = options;
   const soul = await readSoul();
   const memory = await readMemory();
   const lines = [
@@ -336,6 +407,13 @@ async function buildBootstrapContext() {
     lines.push('Memory (memory.md):');
     lines.push(memory.content);
     lines.push('End of memory.');
+  }
+  if (threadKey) {
+    const threadBootstrap = await buildThreadBootstrap(threadKey);
+    if (threadBootstrap) {
+      lines.push(threadBootstrap);
+      lines.push('End of thread memory.');
+    }
   }
   return lines.join('\n');
 }
@@ -649,7 +727,11 @@ async function runAgentOneShot(prompt) {
 
 async function runAgentForChat(chatId, prompt, options = {}) {
   const { topicId, agentId: overrideAgentId } = options;
-  const effectiveAgentId = overrideAgentId || getAgentOverride(agentOverrides, chatId, topicId) || globalAgent;
+  const effectiveAgentId = resolveEffectiveAgentId(
+    chatId,
+    topicId,
+    overrideAgentId
+  );
   const agent = getAgent(effectiveAgentId);
 
   const { threadKey, threadId, migrated } = resolveThreadId(
@@ -672,7 +754,7 @@ async function runAgentForChat(chatId, prompt, options = {}) {
     });
   }
   if (!threadId) {
-    const bootstrap = await buildBootstrapContext();
+    const bootstrap = await buildBootstrapContext({ threadKey });
     promptWithContext = promptWithContext
       ? `${bootstrap}\n\n${promptWithContext}`
       : bootstrap;
@@ -935,9 +1017,22 @@ bot.command('reset', async (ctx) => {
   persistThreads().catch((err) =>
     console.warn('Failed to persist threads after reset:', err),
   );
-  ctx.reply(
-    `Session reset for ${getAgentLabel(effectiveAgentId)} in this topic.`,
-  );
+  try {
+    await persistMemory(() => curateMemory());
+    memoryEventsSinceCurate = 0;
+    await ctx.reply(
+      `Session reset for ${getAgentLabel(
+        effectiveAgentId
+      )} in this topic. Memory curated.`,
+    );
+  } catch (err) {
+    console.warn('Failed to curate memory on reset:', err);
+    await ctx.reply(
+      `Session reset for ${getAgentLabel(
+        effectiveAgentId
+      )} in this topic. Memory curation failed.`,
+    );
+  }
 });
 
 bot.command('model', async (ctx) => {
@@ -1084,6 +1179,84 @@ bot.command('cron', async (ctx) => {
   await ctx.reply('Usage: /cron [list|reload|chatid|assign|unassign]');
 });
 
+bot.command('memory', async (ctx) => {
+  const value = extractCommandValue(ctx.message.text);
+  const parts = value ? value.split(/\s+/).filter(Boolean) : [];
+  const subcommand = (parts[0] || 'status').toLowerCase();
+  const chatId = ctx.chat.id;
+  const topicId = getTopicId(ctx);
+  const topicKey = buildTopicKey(chatId, topicId);
+  const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
+  const threadKey = buildMemoryThreadKey(chatId, topicId, effectiveAgentId);
+
+  if (subcommand === 'status') {
+    try {
+      const status = await getMemoryStatus();
+      const lines = [
+        `Memory file: ${status.memoryPath}`,
+        `Thread files: ${status.threadFiles}`,
+        `Total events: ${status.totalEvents}`,
+        `Events today: ${status.eventsToday}`,
+        `Last curated: ${status.lastCuratedAt || '(never)'}`,
+      ];
+      await ctx.reply(lines.join('\n'));
+    } catch (err) {
+      await replyWithError(ctx, 'Failed to read memory status.', err);
+    }
+    return;
+  }
+
+  if (subcommand === 'tail') {
+    const parsed = Number(parts[1] || 10);
+    const limit = Number.isFinite(parsed)
+      ? Math.max(1, Math.min(50, Math.trunc(parsed)))
+      : 10;
+    try {
+      const events = await getThreadTail(threadKey, { limit });
+      if (!events.length) {
+        await ctx.reply('No memory events in this conversation yet.');
+        return;
+      }
+      const lines = events.map((event) => {
+        const ts = String(event.createdAt || '').replace('T', ' ').slice(0, 16);
+        const who = event.role === 'assistant' ? 'assistant' : 'user';
+        const text = String(event.text || '').replace(/\s+/g, ' ').trim();
+        return `- [${ts}] ${who}: ${text}`;
+      });
+      await ctx.reply(lines.join('\n'));
+    } catch (err) {
+      await replyWithError(ctx, 'Failed to read thread memory tail.', err);
+    }
+    return;
+  }
+
+  if (subcommand === 'curate') {
+    enqueue(`${topicKey}:memory-curate`, async () => {
+      const stopTyping = startTyping(ctx);
+      try {
+        const result = await persistMemory(() => curateMemory());
+        memoryEventsSinceCurate = 0;
+        await ctx.reply(
+          [
+            `Memory curated.`,
+            `Events processed: ${result.eventsProcessed}`,
+            `Thread files: ${result.threadFiles}`,
+            `Output bytes: ${result.bytes}`,
+            `Updated: ${result.lastCuratedAt}`,
+          ].join('\n')
+        );
+      } catch (err) {
+        await replyWithError(ctx, 'Memory curation failed.', err);
+      } finally {
+        stopTyping();
+      }
+    });
+    return;
+  }
+
+  await ctx.reply('Usage: /memory [status|tail [n]|curate]');
+});
+
 bot.on('text', (ctx) => {
   const chatId = ctx.chat.id;
   const topicId = getTopicId(ctx);
@@ -1100,6 +1273,7 @@ bot.on('text', (ctx) => {
         'thinking',
         'agent',
         'model',
+        'memory',
         'reset',
         'cron',
         'help',
@@ -1110,7 +1284,22 @@ bot.on('text', (ctx) => {
     }
     enqueue(topicKey, async () => {
       const stopTyping = startTyping(ctx);
+      const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
+      const memoryThreadKey = buildMemoryThreadKey(
+        chatId,
+        topicId,
+        effectiveAgentId
+      );
       try {
+        await captureMemoryEvent({
+          threadKey: memoryThreadKey,
+          chatId,
+          topicId,
+          agentId: effectiveAgentId,
+          role: 'user',
+          kind: 'command',
+          text,
+        });
         let scriptMeta = {};
         try {
           scriptMeta = await scriptManager.getScriptMetadata(slash.name);
@@ -1130,11 +1319,29 @@ bot.on('text', (ctx) => {
             topicId,
             scriptContext,
           });
+          await captureMemoryEvent({
+            threadKey: memoryThreadKey,
+            chatId,
+            topicId,
+            agentId: effectiveAgentId,
+            role: 'assistant',
+            kind: 'text',
+            text: extractMemoryText(response),
+          });
           stopTyping();
           await replyWithResponse(ctx, response);
           return;
         }
         lastScriptOutputs.set(topicKey, { name: slash.name, output });
+        await captureMemoryEvent({
+          threadKey: memoryThreadKey,
+          chatId,
+          topicId,
+          agentId: effectiveAgentId,
+          role: 'assistant',
+          kind: 'text',
+          text: extractMemoryText(output),
+        });
         stopTyping();
         await replyWithResponse(ctx, output);
       } catch (err) {
@@ -1148,11 +1355,35 @@ bot.on('text', (ctx) => {
 
   enqueue(topicKey, async () => {
     const stopTyping = startTyping(ctx);
+    const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
+    const memoryThreadKey = buildMemoryThreadKey(
+      chatId,
+      topicId,
+      effectiveAgentId
+    );
     try {
+      await captureMemoryEvent({
+        threadKey: memoryThreadKey,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        role: 'user',
+        kind: 'text',
+        text,
+      });
       const scriptContext = consumeScriptContext(topicKey);
       const response = await runAgentForChat(chatId, text, {
         topicId,
         scriptContext,
+      });
+      await captureMemoryEvent({
+        threadKey: memoryThreadKey,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        role: 'assistant',
+        kind: 'text',
+        text: extractMemoryText(response),
       });
       stopTyping();
       await replyWithResponse(ctx, response);
@@ -1173,6 +1404,12 @@ bot.on(['voice', 'audio', 'document'], (ctx, next) => {
 
   enqueue(topicKey, async () => {
     const stopTyping = startTyping(ctx);
+    const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
+    const memoryThreadKey = buildMemoryThreadKey(
+      chatId,
+      topicId,
+      effectiveAgentId
+    );
     let audioPath;
     let transcriptPath;
     try {
@@ -1187,7 +1424,25 @@ bot.on(['voice', 'audio', 'document'], (ctx, next) => {
         await ctx.reply("I couldn't transcribe the audio.");
         return;
       }
+      await captureMemoryEvent({
+        threadKey: memoryThreadKey,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        role: 'user',
+        kind: 'audio',
+        text,
+      });
       const response = await runAgentForChat(chatId, text, { topicId });
+      await captureMemoryEvent({
+        threadKey: memoryThreadKey,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        role: 'assistant',
+        kind: 'text',
+        text: extractMemoryText(response),
+      });
       await replyWithResponse(ctx, response);
     } catch (err) {
       console.error(err);
@@ -1217,6 +1472,12 @@ bot.on(['photo', 'document'], (ctx, next) => {
 
   enqueue(topicKey, async () => {
     const stopTyping = startTyping(ctx);
+    const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
+    const memoryThreadKey = buildMemoryThreadKey(
+      chatId,
+      topicId,
+      effectiveAgentId
+    );
     let imagePath;
     try {
       imagePath = await downloadTelegramFile(ctx, payload, {
@@ -1226,9 +1487,27 @@ bot.on(['photo', 'document'], (ctx, next) => {
       });
       const caption = (ctx.message.caption || '').trim();
       const prompt = caption || 'User sent an image.';
+      await captureMemoryEvent({
+        threadKey: memoryThreadKey,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        role: 'user',
+        kind: 'image',
+        text: prompt,
+      });
       const response = await runAgentForChat(chatId, prompt, {
         topicId,
         imagePaths: [imagePath],
+      });
+      await captureMemoryEvent({
+        threadKey: memoryThreadKey,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        role: 'assistant',
+        kind: 'text',
+        text: extractMemoryText(response),
       });
       await replyWithResponse(ctx, response);
     } catch (err) {
@@ -1250,6 +1529,12 @@ bot.on('document', (ctx) => {
 
   enqueue(topicKey, async () => {
     const stopTyping = startTyping(ctx);
+    const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
+    const memoryThreadKey = buildMemoryThreadKey(
+      chatId,
+      topicId,
+      effectiveAgentId
+    );
     let documentPath;
     try {
       documentPath = await downloadTelegramFile(ctx, payload, {
@@ -1259,9 +1544,27 @@ bot.on('document', (ctx) => {
       });
       const caption = (ctx.message.caption || '').trim();
       const prompt = caption || 'User sent a document.';
+      await captureMemoryEvent({
+        threadKey: memoryThreadKey,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        role: 'user',
+        kind: 'document',
+        text: prompt,
+      });
       const response = await runAgentForChat(chatId, prompt, {
         topicId,
         documentPaths: [documentPath],
+      });
+      await captureMemoryEvent({
+        threadKey: memoryThreadKey,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        role: 'assistant',
+        kind: 'text',
+        text: extractMemoryText(response),
       });
       await replyWithResponse(ctx, response);
     } catch (err) {
@@ -1319,11 +1622,31 @@ async function sendResponseToChat(chatId, response, options = {}) {
 
 async function handleCronTrigger(chatId, prompt, options = {}) {
   const { jobId, agent, topicId } = options;
+  const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId, agent);
+  const memoryThreadKey = buildMemoryThreadKey(chatId, topicId, effectiveAgentId);
   console.info(`Cron job ${jobId} executing for chat ${chatId} topic=${topicId || 'none'}${agent ? ` (agent: ${agent})` : ''}`);
   try {
     const actionExtra = topicId ? { message_thread_id: topicId } : {};
     await bot.telegram.sendChatAction(chatId, 'typing', actionExtra);
+    await captureMemoryEvent({
+      threadKey: memoryThreadKey,
+      chatId,
+      topicId,
+      agentId: effectiveAgentId,
+      role: 'user',
+      kind: 'cron',
+      text: String(prompt || ''),
+    });
     const response = await runAgentForChat(chatId, prompt, { agentId: agent, topicId });
+    await captureMemoryEvent({
+      threadKey: memoryThreadKey,
+      chatId,
+      topicId,
+      agentId: effectiveAgentId,
+      role: 'assistant',
+      kind: 'text',
+      text: extractMemoryText(response),
+    });
     const silentTokens = ['HEARTBEAT_OK', 'CURATION_EMPTY'];
     const matchedToken = silentTokens.find(t => response.includes(t));
     if (matchedToken) {
@@ -1405,7 +1728,7 @@ function shutdown(signal) {
         ]);
       }
       await Promise.race([
-        Promise.allSettled([threadsPersist, agentOverridesPersist]),
+        Promise.allSettled([threadsPersist, agentOverridesPersist, memoryPersist]),
         new Promise((resolve) => setTimeout(resolve, 2000)),
       ]);
     })

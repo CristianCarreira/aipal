@@ -41,7 +41,7 @@ Open Telegram, send `/start`, then any message.
 - Audio: send a voice note or audio file (transcribed with Parakeet)
 - Images: send a photo or image file (caption becomes the prompt)
 - Documents: send a file (caption becomes the prompt)
-- `/reset`: clear the current agent session (drops the stored session id for this agent)
+- `/reset`: clear the current agent session (drops the stored session id for this agent) and trigger memory curation
 - `/thinking <level>`: set reasoning effort (mapped to `model_reasoning_effort`) for this session
 - `/agent <name>`: set the CLI agent
     - In root: sets global agent (persisted in `config.json`)
@@ -49,6 +49,7 @@ Open Telegram, send `/start`, then any message.
 - `/agent default`: clear agent override for the current topic and return to global agent
 - `/reset`: clear the current agent session for this topic (drops the stored session id for this agent)
 - `/model [model_id]`: view/set the model for the current agent (persisted in `config.json`)
+- `/memory [status|tail [n]|curate]`: inspect and curate automatic memory
 - `/cron [list|reload|chatid]`: manage cron jobs (see below)
 - `/help`: list available commands and scripts
 - `/document_scripts confirm`: generate short descriptions for scripts (writes `scripts.json`; requires `ALLOWED_USERS`)
@@ -106,6 +107,7 @@ The only required environment variable is `TELEGRAM_BOT_TOKEN` in `.env`.
 Optional:
 - `AIPAL_SCRIPTS_DIR`: directory for slash scripts (default: `~/.config/aipal/scripts`)
 - `AIPAL_SCRIPT_TIMEOUT_MS`: timeout for slash scripts (default: 120000)
+- `AIPAL_MEMORY_CURATE_EVERY`: auto-curate memory after N captured events (default: 20)
 - `ALLOWED_USERS`: comma-separated list of Telegram user IDs allowed to interact with the bot (if unset/empty, bot is open to everyone)
 
 ## Config file (optional)
@@ -127,6 +129,12 @@ If `soul.md` and/or `memory.md` exist next to `config.json`, their contents are 
 
 Location:
 `~/.config/aipal/soul.md` and `~/.config/aipal/memory.md` (or under `$XDG_CONFIG_HOME/aipal/`).
+
+### Automatic memory capture
+- Every interaction is captured automatically in per-thread files under `~/.config/aipal/memory/threads/*.jsonl` (or `$XDG_CONFIG_HOME/aipal/memory/threads/*.jsonl`).
+- Memory is isolated by `chatId:topicId:agentId` to avoid collisions across agents and topics.
+- `memory.md` remains the global curated memory. The bot can curate it automatically and via `/memory curate`.
+- `/memory status` shows memory health, `/memory tail` shows recent events for the current conversation.
 
 ## Security notes
 This bot executes local commands on your machine. Run it only on trusted hardware, keep the bot private, and avoid sharing the token.

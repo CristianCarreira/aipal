@@ -1,4 +1,4 @@
-# Configuration (config.json + memory.md + soul.md + cron.json)
+# Configuration (config.json + memory.md + soul.md + cron.json + memory state)
 
 This bot stores a minimal JSON config with the values set by `/agent`.
 
@@ -40,6 +40,21 @@ If `memory.md` exists alongside `config.json`, its contents are injected into th
 Location:
 - `~/.config/aipal/memory.md`
 - If `XDG_CONFIG_HOME` is set, it uses `$XDG_CONFIG_HOME/aipal/memory.md`
+
+## Automatic memory capture
+Every conversation is captured automatically into per-thread JSONL files:
+
+- `~/.config/aipal/memory/threads/*.jsonl`
+- If `XDG_CONFIG_HOME` is set, it uses `$XDG_CONFIG_HOME/aipal/memory/threads/*.jsonl`
+
+The key format is `chatId:topicId:agentId`, so multiple agents can write memory in parallel without sharing raw logs.
+
+Curated memory state is stored in:
+- `~/.config/aipal/memory/state.json`
+- If `XDG_CONFIG_HOME` is set, it uses `$XDG_CONFIG_HOME/aipal/memory/state.json`
+
+Environment knobs:
+- `AIPAL_MEMORY_CURATE_EVERY`: auto-curate memory after N new captured events (default: `20`).
 
 ## Soul file (optional)
 If `soul.md` exists alongside `config.json`, its contents are injected into the very first prompt of a new conversation, before `memory.md`.

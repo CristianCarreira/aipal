@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-02-12
+### Added
+- Automatic memory capture per conversation/agent into `memory/threads/*.jsonl`.
+- `/memory` command with `status`, `tail`, and `curate` subcommands.
+- Thread-specific memory bootstrap on the first turn of a new agent session.
+
+### Changed
+- `memory.md` now supports an auto-generated section (between markers) curated from thread events while preserving manual notes.
+- `/reset` now triggers immediate memory curation after clearing the session thread.
+
+### Documentation
+- Added automatic memory capture and curation details in `README.md` and `docs/configuration.md`.
+
 ## [0.2.0] - 2026-02-03
 ### Added
 - LLM post-processing for slash scripts via `scripts.json` metadata (`llm.prompt`).
