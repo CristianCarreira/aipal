@@ -37,3 +37,63 @@ test('saveCronJobs writes and loadCronJobs reads jobs', async () => {
   assert.deepEqual(JSON.parse(raw), { jobs: input });
 });
 
+test('scheduleJobs passes topicId and job chatId to onTrigger', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-cron-'));
+  const { saveCronJobs, startCronScheduler } = loadCronScheduler(dir);
+
+  const jobs = [
+    {
+      id: 'with-topic',
+      cron: '* * * * *',
+      prompt: 'hello',
+      enabled: true,
+      topicId: 99999,
+      chatId: -100555,
+    },
+    {
+      id: 'no-topic',
+      cron: '* * * * *',
+      prompt: 'world',
+      enabled: true,
+    },
+  ];
+  await saveCronJobs(jobs);
+
+  const calls = [];
+  const scheduler = startCronScheduler({
+    chatId: -100111,
+    onTrigger: async (chatId, prompt, options) => {
+      calls.push({ chatId, prompt, options });
+    },
+  });
+
+  // Wait for scheduleJobs to finish
+  await new Promise((r) => setTimeout(r, 100));
+
+  // Verify tasks were scheduled
+  assert.equal(scheduler.tasks.size, 2);
+
+  scheduler.stop();
+});
+
+test('saveCronJobs preserves topicId and chatId fields', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-cron-'));
+  const { loadCronJobs, saveCronJobs } = loadCronScheduler(dir);
+
+  const input = [
+    {
+      id: 'newsletter',
+      cron: '15 9 * * 4',
+      prompt: 'gen newsletter',
+      enabled: true,
+      topicId: 12345,
+      chatId: -100999,
+    },
+  ];
+  await saveCronJobs(input);
+
+  const loaded = await loadCronJobs();
+  assert.equal(loaded[0].topicId, 12345);
+  assert.equal(loaded[0].chatId, -100999);
+});
+

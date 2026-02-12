@@ -65,7 +65,11 @@ function startCronScheduler(options = {}) {
       const task = cron.schedule(job.cron, async () => {
         console.info(`Cron triggered: ${job.id}`);
         try {
-          await onTrigger(chatId, job.prompt, { jobId: job.id, agent: job.agent });
+          await onTrigger(job.chatId || chatId, job.prompt, {
+            jobId: job.id,
+            agent: job.agent,
+            topicId: job.topicId,
+          });
         } catch (err) {
           console.error(`Cron job ${job.id} failed:`, err);
         }

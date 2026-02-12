@@ -40,6 +40,7 @@ const {
 } = require('./thread-store');
 const {
   loadCronJobs,
+  saveCronJobs,
   startCronScheduler,
 } = require('./cron-scheduler');
 const {
@@ -1002,11 +1003,65 @@ bot.command('cron', async (ctx) => {
       }
       const lines = jobs.map((j) => {
         const status = j.enabled ? '✅' : '❌';
-        return `${status} ${j.id}: ${j.cron} → "${j.prompt}"`;
+        const topicLabel = j.topicId ? ` [📌 Topic ${j.topicId}]` : '';
+        return `${status} ${j.id}: ${j.cron}${topicLabel}`;
       });
       await ctx.reply(`Cron jobs:\n${lines.join('\n')}`);
     } catch (err) {
       await replyWithError(ctx, 'Failed to list cron jobs.', err);
+    }
+    return;
+  }
+
+  if (subcommand === 'assign') {
+    const jobId = parts[1];
+    if (!jobId) {
+      await ctx.reply('Usage: /cron assign <jobId>');
+      return;
+    }
+    const topicId = getTopicId(ctx);
+    if (!topicId) {
+      await ctx.reply('Send this command from a topic/thread in a group to assign the cron to it.');
+      return;
+    }
+    try {
+      const jobs = await loadCronJobs();
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job) {
+        await ctx.reply(`Cron job "${jobId}" not found. Available: ${jobs.map((j) => j.id).join(', ')}`);
+        return;
+      }
+      job.topicId = topicId;
+      job.chatId = ctx.chat.id;
+      await saveCronJobs(jobs);
+      if (cronScheduler) await cronScheduler.reload();
+      await ctx.reply(`Cron "${jobId}" assigned to this topic (${topicId}).`);
+    } catch (err) {
+      await replyWithError(ctx, 'Failed to assign cron job.', err);
+    }
+    return;
+  }
+
+  if (subcommand === 'unassign') {
+    const jobId = parts[1];
+    if (!jobId) {
+      await ctx.reply('Usage: /cron unassign <jobId>');
+      return;
+    }
+    try {
+      const jobs = await loadCronJobs();
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job) {
+        await ctx.reply(`Cron job "${jobId}" not found.`);
+        return;
+      }
+      delete job.topicId;
+      delete job.chatId;
+      await saveCronJobs(jobs);
+      if (cronScheduler) await cronScheduler.reload();
+      await ctx.reply(`Cron "${jobId}" unassigned. Will send to default chat.`);
+    } catch (err) {
+      await replyWithError(ctx, 'Failed to unassign cron job.', err);
     }
     return;
   }
@@ -1026,7 +1081,7 @@ bot.command('cron', async (ctx) => {
     return;
   }
 
-  await ctx.reply('Usage: /cron [list|reload|chatid]');
+  await ctx.reply('Usage: /cron [list|reload|chatid|assign|unassign]');
 });
 
 bot.on('text', (ctx) => {
@@ -1215,7 +1270,9 @@ bot.on('document', (ctx) => {
   });
 });
 
-async function sendResponseToChat(chatId, response) {
+async function sendResponseToChat(chatId, response, options = {}) {
+  const { topicId } = options;
+  const threadExtra = topicId ? { message_thread_id: topicId } : {};
   const { cleanedText: afterImages, imagePaths } = extractImageTokens(
     response || '',
     IMAGE_DIR
@@ -1231,6 +1288,7 @@ async function sendResponseToChat(chatId, response) {
       await bot.telegram.sendMessage(chatId, formatted, {
         parse_mode: 'HTML',
         disable_web_page_preview: true,
+        ...threadExtra,
       });
     }
   }
@@ -1239,7 +1297,7 @@ async function sendResponseToChat(chatId, response) {
     try {
       if (!isPathInside(IMAGE_DIR, imagePath)) continue;
       await fs.access(imagePath);
-      await bot.telegram.sendPhoto(chatId, { source: imagePath });
+      await bot.telegram.sendPhoto(chatId, { source: imagePath }, threadExtra);
     } catch (err) {
       console.warn('Failed to send image:', imagePath, err);
     }
@@ -1249,7 +1307,7 @@ async function sendResponseToChat(chatId, response) {
     try {
       if (!isPathInside(DOCUMENT_DIR, documentPath)) continue;
       await fs.access(documentPath);
-      await bot.telegram.sendDocument(chatId, { source: documentPath });
+      await bot.telegram.sendDocument(chatId, { source: documentPath }, threadExtra);
     } catch (err) {
       console.warn('Failed to send document:', documentPath, err);
     }
@@ -1257,22 +1315,24 @@ async function sendResponseToChat(chatId, response) {
 }
 
 async function handleCronTrigger(chatId, prompt, options = {}) {
-  const { jobId, agent } = options;
-  console.info(`Cron job ${jobId} executing for chat ${chatId}${agent ? ` (agent: ${agent})` : ''}`);
+  const { jobId, agent, topicId } = options;
+  console.info(`Cron job ${jobId} executing for chat ${chatId} topic=${topicId || 'none'}${agent ? ` (agent: ${agent})` : ''}`);
   try {
-    await bot.telegram.sendChatAction(chatId, 'typing');
-    const response = await runAgentForChat(chatId, prompt, { agentId: agent });
+    const actionExtra = topicId ? { message_thread_id: topicId } : {};
+    await bot.telegram.sendChatAction(chatId, 'typing', actionExtra);
+    const response = await runAgentForChat(chatId, prompt, { agentId: agent, topicId });
     const silentTokens = ['HEARTBEAT_OK', 'CURATION_EMPTY'];
     const matchedToken = silentTokens.find(t => response.includes(t));
     if (matchedToken) {
       console.info(`Cron job ${jobId}: ${matchedToken} (silent)`);
       return;
     }
-    await sendResponseToChat(chatId, response);
+    await sendResponseToChat(chatId, response, { topicId });
   } catch (err) {
     console.error(`Cron job ${jobId} failed:`, err);
     try {
-      await bot.telegram.sendMessage(chatId, `Cron job "${jobId}" failed: ${err.message}`);
+      const errExtra = topicId ? { message_thread_id: topicId } : {};
+      await bot.telegram.sendMessage(chatId, `Cron job "${jobId}" failed: ${err.message}`, errExtra);
     } catch {}
   }
 }
