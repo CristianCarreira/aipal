@@ -6,6 +6,10 @@ const {
   CONFIG_DIR,
   MEMORY_PATH,
 } = require('./config-store');
+const {
+  getMemoryIndexStatus,
+  indexMemoryEvent,
+} = require('./memory-index');
 
 const MEMORY_DIR = path.join(CONFIG_DIR, 'memory');
 const MEMORY_THREADS_DIR = path.join(MEMORY_DIR, 'threads');
@@ -319,6 +323,11 @@ async function appendMemoryEvent(event) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.appendFile(filePath, `${JSON.stringify(entry)}\n`, 'utf8');
   });
+  try {
+    await indexMemoryEvent(entry);
+  } catch (err) {
+    console.warn('Failed to index memory event:', err);
+  }
 }
 
 async function buildThreadBootstrap(threadKey, options = {}) {
@@ -388,6 +397,12 @@ async function getMemoryStatus(options = {}) {
     maxAgeDays: options.maxAgeDays || 0,
   });
   const state = await readMemoryState();
+  let indexStatus = null;
+  try {
+    indexStatus = await getMemoryIndexStatus();
+  } catch (err) {
+    console.warn('Failed to read memory index status:', err);
+  }
   const today = isoDay(new Date());
   const eventsToday = events.filter((event) => isoDay(event.createdAt) === today).length;
   return {
@@ -397,6 +412,9 @@ async function getMemoryStatus(options = {}) {
     totalEvents: events.length,
     eventsToday,
     lastCuratedAt: state.lastCuratedAt || '',
+    indexPath: indexStatus?.indexPath || '',
+    indexedEvents: Number(indexStatus?.totalEvents || 0),
+    indexSupportsFts: Boolean(indexStatus?.supportsFts),
   };
 }
 

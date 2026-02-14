@@ -8,8 +8,10 @@ function loadModules(configHome) {
   process.env.XDG_CONFIG_HOME = configHome;
   const configStorePath = path.join(__dirname, '..', 'src', 'config-store.js');
   const memoryStorePath = path.join(__dirname, '..', 'src', 'memory-store.js');
+  const memoryIndexPath = path.join(__dirname, '..', 'src', 'memory-index.js');
   const retrievalPath = path.join(__dirname, '..', 'src', 'memory-retrieval.js');
   delete require.cache[require.resolve(configStorePath)];
+  delete require.cache[require.resolve(memoryIndexPath)];
   delete require.cache[require.resolve(memoryStorePath)];
   delete require.cache[require.resolve(retrievalPath)];
   const memoryStore = require(memoryStorePath);

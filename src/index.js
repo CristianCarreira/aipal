@@ -1216,6 +1216,9 @@ bot.command('memory', async (ctx) => {
         `Memory file: ${status.memoryPath}`,
         `Thread files: ${status.threadFiles}`,
         `Total events: ${status.totalEvents}`,
+        `Indexed events: ${status.indexedEvents}`,
+        `Index path: ${status.indexPath || '(unavailable)'}`,
+        `FTS enabled: ${status.indexSupportsFts ? 'yes' : 'no'}`,
         `Events today: ${status.eventsToday}`,
         `Last curated: ${status.lastCuratedAt || '(never)'}`,
       ];

@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - `/memory` command with `status`, `tail`, `search`, and `curate` subcommands.
 - Thread-specific memory bootstrap on the first turn of a new agent session.
 - Retrieval iteration 1: lexical + recency memory retrieval injected into prompts with mixed-scope selection (same thread/topic + global), plus `/memory search`.
+- SQLite memory index at `memory/index.sqlite` with automatic sync from thread JSONL files for faster cross-topic retrieval.
 
 ### Changed
 - `memory.md` now supports an auto-generated section (between markers) curated from thread events while preserving manual notes.

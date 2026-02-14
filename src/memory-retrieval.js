@@ -3,8 +3,9 @@ const path = require('node:path');
 
 const { MEMORY_THREADS_DIR } = require('./memory-store');
 const { normalizeTopicId } = require('./thread-store');
+const { queryIndexedEvents } = require('./memory-index');
 
-const DEFAULT_LIMIT = 8;
+const DEFAULT_LIMIT = 12;
 const DEFAULT_MAX_FILES = 200;
 const DEFAULT_SNIPPET_LENGTH = 220;
 const DIVERSITY_SCOPE_ORDER = [
@@ -127,7 +128,7 @@ function scoreScope(event, target) {
   if (eventChat === targetChat) {
     return { value: 2, label: 'same-chat' };
   }
-  return { value: 0.5, label: 'global' };
+  return { value: 1.5, label: 'global' };
 }
 
 function scoreLexical(text, queryTokens, queryText) {
@@ -207,7 +208,12 @@ async function searchMemory(options = {}) {
     ? Math.max(1, Math.trunc(options.maxFiles))
     : DEFAULT_MAX_FILES;
 
-  const all = await readRecentThreadEvents(maxFiles);
+  const all = await readRetrievalEvents({
+    query,
+    queryTokens,
+    limit,
+    maxFiles,
+  });
   if (!all.length) return [];
 
   const nowMs = Date.now();
@@ -215,7 +221,7 @@ async function searchMemory(options = {}) {
   for (const event of all) {
     const scope = scoreScope(event, options);
     const lexical = scoreLexical(event.text, queryTokens, query);
-    if (queryTokens.length > 0 && lexical === 0 && scope.value < 4) continue;
+    if (queryTokens.length > 0 && lexical === 0 && scope.value < 2) continue;
     const recency = scoreRecency(event.createdAt, nowMs);
     const roleBoost = event.role === 'user' ? 0.3 : 0;
     const score = scope.value + lexical + recency + roleBoost;
@@ -242,6 +248,30 @@ async function searchMemory(options = {}) {
   return selectDiversifiedResults(uniqueByText, limit);
 }
 
+async function readRetrievalEvents(options = {}) {
+  const query = String(options.query || '');
+  const queryTokens = Array.isArray(options.queryTokens) ? options.queryTokens : [];
+  const limit = Number.isFinite(options.limit)
+    ? Math.max(1, Math.min(30, Math.trunc(options.limit)))
+    : DEFAULT_LIMIT;
+  const maxFiles = Number.isFinite(options.maxFiles)
+    ? Math.max(1, Math.trunc(options.maxFiles))
+    : DEFAULT_MAX_FILES;
+
+  try {
+    const indexed = await queryIndexedEvents({
+      query,
+      queryTokens,
+      limit: Math.max(limit * 12, 60),
+    });
+    if (indexed.length > 0) return indexed;
+  } catch (err) {
+    console.warn('Indexed memory retrieval failed, falling back to JSONL scan:', err);
+  }
+
+  return readRecentThreadEvents(maxFiles);
+}
+
 function selectDiversifiedResults(events, limit) {
   if (!Array.isArray(events) || events.length === 0 || limit <= 0) return [];
 
@@ -258,6 +288,7 @@ function selectDiversifiedResults(events, limit) {
   const selected = [];
   const selectedIds = new Set();
 
+  // First pass: guarantee at least one from each scope
   for (const scope of DIVERSITY_SCOPE_ORDER) {
     if (selected.length >= limit) break;
     const candidates = byScope.get(scope) || [];
@@ -267,6 +298,17 @@ function selectDiversifiedResults(events, limit) {
     if (!event || selectedIds.has(eventIdentity)) continue;
     selected.push(event);
     selectedIds.add(eventIdentity);
+  }
+
+  // Second pass: guarantee at least 2 global results if available
+  const globalCandidates = byScope.get('global') || [];
+  while (selected.length < limit && globalCandidates.length > 0) {
+    const event = globalCandidates.shift();
+    const eventIdentity = getEventIdentity(event);
+    if (!event || selectedIds.has(eventIdentity)) continue;
+    selected.push(event);
+    selectedIds.add(eventIdentity);
+    if (selected.filter((e) => e.scope === 'global').length >= 3) break;
   }
 
   for (const event of events) {

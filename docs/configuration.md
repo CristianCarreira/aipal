@@ -49,6 +49,10 @@ Every conversation is captured automatically into per-thread JSONL files:
 
 The key format is `chatId:topicId:agentId`, so multiple agents can write memory in parallel without sharing raw logs.
 
+An SQLite index is also maintained automatically:
+- `~/.config/aipal/memory/index.sqlite`
+- If `XDG_CONFIG_HOME` is set, it uses `$XDG_CONFIG_HOME/aipal/memory/index.sqlite`
+
 Curated memory state is stored in:
 - `~/.config/aipal/memory/state.json`
 - If `XDG_CONFIG_HOME` is set, it uses `$XDG_CONFIG_HOME/aipal/memory/state.json`
