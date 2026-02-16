@@ -35,6 +35,38 @@ test('parseAgentOutput extracts thread id and message text', () => {
   assert.equal(parsed.sawJson, true);
 });
 
+test('parseAgentOutput prefers final channel messages for codex', () => {
+  const agent = getAgent('codex');
+  const output = [
+    JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'message', channel: 'commentary', text: 'voy a hacer X' },
+    }),
+    JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'message', channel: 'final', text: 'hecho: resultado final' },
+    }),
+  ].join('\n');
+  const parsed = agent.parseOutput(output);
+  assert.equal(parsed.text, 'hecho: resultado final');
+});
+
+test('parseAgentOutput falls back to last codex message when no channel exists', () => {
+  const agent = getAgent('codex');
+  const output = [
+    JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'message', text: 'paso intermedio' },
+    }),
+    JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'message', text: 'respuesta final' },
+    }),
+  ].join('\n');
+  const parsed = agent.parseOutput(output);
+  assert.equal(parsed.text, 'respuesta final');
+});
+
 test('buildAgentCommand builds claude headless command with resume', () => {
   const agent = getAgent('claude');
   const command = agent.buildCommand({ prompt: 'hello', threadId: 'session-1' });
@@ -118,5 +150,4 @@ test('listModelsCommand builds opencode models command', () => {
   const command = agent.listModelsCommand();
   assert.match(command, /opencode models/);
 });
-
 

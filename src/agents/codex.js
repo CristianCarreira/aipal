@@ -30,7 +30,8 @@ function buildCommand({ prompt, promptExpression, threadId, model, thinking }) {
 function parseOutput(output) {
   const lines = String(output || '').split(/\r?\n/);
   let threadId;
-  const messages = [];
+  const allMessages = [];
+  const finalMessages = [];
   let sawJson = false;
   let buffer = '';
   for (const line of lines) {
@@ -57,11 +58,23 @@ function parseOutput(output) {
     if (payload.type === 'item.completed' && payload.item && typeof payload.item.text === 'string') {
       const itemType = String(payload.item.type || '');
       if (itemType.includes('message')) {
-        messages.push(payload.item.text);
+        const text = String(payload.item.text || '');
+        if (!text.trim()) continue;
+        allMessages.push(text);
+        const channel = String(
+          payload.item.channel ||
+            payload.item.message?.channel ||
+            payload.item.metadata?.channel ||
+            ''
+        ).toLowerCase();
+        if (channel === 'final') {
+          finalMessages.push(text);
+        }
       }
     }
   }
-  const text = messages.join('\n').trim();
+  const selected = finalMessages.length > 0 ? finalMessages : allMessages.slice(-1);
+  const text = selected.join('\n').trim();
   return { text, threadId, sawJson };
 }
 
