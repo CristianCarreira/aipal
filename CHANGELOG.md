@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-02-19
+### Added
+- `/model reset` to clear the current agent model override and return to its default model.
+- Automatic memory capture/retrieval stack with mixed-scope context (`same-thread`, `same-topic`, `same-chat`, `global`) and a SQLite index for faster lookups.
+
+### Changed
+- Codex responses now prioritize `final` channel outputs in Telegram.
+- Runtime now targets Node.js 24 (including CI and local `.nvmrc`).
+- Ignore `.playwright-cli/` artifacts in git status by default.
+
+### Fixed
+- Prevented a deadlock path in memory index retrieval.
+
+### Documentation
+- Updated model command docs to include `/model reset`.
+- Expanded memory/config documentation for retrieval and indexing behavior.
+
 ## [0.2.1] - 2026-02-12
 ### Added
 - Automatic memory capture per conversation/agent into `memory/threads/*.jsonl`.
