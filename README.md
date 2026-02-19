@@ -48,7 +48,7 @@ Open Telegram, send `/start`, then any message.
     - In a topic: sets an override for this topic (persisted in `agent-overrides.json`)
 - `/agent default`: clear agent override for the current topic and return to global agent
 - `/reset`: clear the current agent session for this topic (drops the stored session id for this agent)
-- `/model [model_id]`: view/set the model for the current agent (persisted in `config.json`)
+- `/model [model_id|reset]`: view/set/reset the model for the current agent (persisted in `config.json`)
 - `/memory [status|tail [n]|search <query>|curate]`: inspect, search, and curate automatic memory
 - `/cron [list|reload|chatid]`: manage cron jobs (see below)
 - `/help`: list available commands and scripts

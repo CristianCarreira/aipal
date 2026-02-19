@@ -73,6 +73,10 @@ const {
   buildPrompt,
 } = require('./message-utils');
 const {
+  isModelResetCommand,
+  clearModelOverride,
+} = require('./model-settings');
+const {
   createAccessControlMiddleware,
   parseAllowedUsersEnv,
 } = require('./access-control');
@@ -203,7 +207,7 @@ bot.command('help', async (ctx) => {
     '/start - Hello world',
     '/agent <name> - Switch agent (codex, claude, gemini, opencode)',
     '/thinking <level> - Set reasoning effort',
-    '/model [model_id] - View/set model for current agent',
+    '/model [model_id|reset] - View/set/reset model for current agent',
     '/memory [status|tail|search|curate] - Memory capture + retrieval + curation',
     '/reset - Reset current agent session',
     '/cron [list|reload|chatid] - Manage cron jobs',
@@ -1061,7 +1065,7 @@ bot.command('model', async (ctx) => {
 
   if (!value) {
     const current = globalModels[globalAgent] || agent.defaultModel || '(default)';
-    let msg = `Current model for ${agent.label}: ${current}. Use /model <model_id> to change.`;
+    let msg = `Current model for ${agent.label}: ${current}. Use /model <model_id> to change or /model reset to clear.`;
 
     // Try to list available models if the agent supports it
     if (typeof agent.listModelsCommand === 'function') {
@@ -1094,6 +1098,19 @@ bot.command('model', async (ctx) => {
   }
 
   try {
+    if (isModelResetCommand(value)) {
+      const { nextModels, hadOverride } = clearModelOverride(globalModels, globalAgent);
+      globalModels = nextModels;
+      await updateConfig({ models: globalModels });
+      if (hadOverride) {
+        const current = agent.defaultModel || '(default)';
+        ctx.reply(`Model for ${agent.label} reset. Now using ${current}.`);
+      } else {
+        ctx.reply(`No model override set for ${agent.label}.`);
+      }
+      return;
+    }
+
     globalModels[globalAgent] = value;
     await updateConfig({ models: globalModels });
 
