@@ -1,4 +1,4 @@
-# Configuration (config.json + memory.md + soul.md + cron.json + memory state)
+# Configuration (config.json + soul.md + tools.md + memory.md + cron.json + memory state)
 
 This bot stores a minimal JSON config with the values set by `/agent`.
 
@@ -34,8 +34,14 @@ Schema:
 }
 ```
 
+## Bootstrap files (optional)
+When present, these files are injected into the very first prompt of a new conversation (no active session/thread) in this order:
+1. `soul.md`
+2. `tools.md`
+3. `memory.md`
+
 ## Memory file (optional)
-If `memory.md` exists alongside `config.json`, its contents are injected into the very first prompt of a new conversation (i.e. when there is no active session/thread).
+If `memory.md` exists alongside `config.json`, its contents are injected during bootstrap (after `soul.md` and `tools.md`).
 
 Location:
 - `~/.config/aipal/memory.md`
@@ -64,11 +70,18 @@ Environment knobs:
 Retrieval currently mixes scopes (`same-thread`, `same-topic`, `same-chat`, `global`) so prompts can include both local continuity and useful cross-topic memory when available.
 
 ## Soul file (optional)
-If `soul.md` exists alongside `config.json`, its contents are injected into the very first prompt of a new conversation, before `memory.md`.
+If `soul.md` exists alongside `config.json`, its contents are injected first during bootstrap (before `tools.md` and `memory.md`).
 
 Location:
 - `~/.config/aipal/soul.md`
 - If `XDG_CONFIG_HOME` is set, it uses `$XDG_CONFIG_HOME/aipal/soul.md`
+
+## Tools file (optional)
+If `tools.md` exists alongside `config.json`, its contents are injected during bootstrap after `soul.md` and before `memory.md`.
+
+Location:
+- `~/.config/aipal/tools.md`
+- If `XDG_CONFIG_HOME` is set, it uses `$XDG_CONFIG_HOME/aipal/tools.md`
 
 ## Cron jobs file (optional)
 Cron jobs live in a separate file:

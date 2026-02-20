@@ -67,6 +67,26 @@ test('readSoul loads soul content', async () => {
   assert.equal(soul.path, SOUL_PATH);
 });
 
+test('readTools returns missing state when tools file does not exist', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-config-'));
+  const { readTools } = loadConfigStore(dir);
+  const tools = await readTools();
+  assert.equal(tools.exists, false);
+  assert.equal(tools.content, '');
+  assert.match(tools.path, /tools\.md$/);
+});
+
+test('readTools loads tools content', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-config-'));
+  const { readTools, TOOLS_PATH } = loadConfigStore(dir);
+  await fs.mkdir(path.dirname(TOOLS_PATH), { recursive: true });
+  await fs.writeFile(TOOLS_PATH, 'hello tools');
+  const tools = await readTools();
+  assert.equal(tools.exists, true);
+  assert.equal(tools.content, 'hello tools');
+  assert.equal(tools.path, TOOLS_PATH);
+});
+
 test('loadThreads returns empty map when threads file is missing', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-config-'));
   const { loadThreads } = loadConfigStore(dir);

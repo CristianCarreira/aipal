@@ -26,6 +26,18 @@ async function saveCronJobs(jobs) {
   await fs.rename(tmpPath, CRON_PATH);
 }
 
+function buildCronTriggerPayload(job, defaultChatId) {
+  return {
+    chatId: job.chatId || defaultChatId,
+    prompt: job.prompt,
+    options: {
+      jobId: job.id,
+      agent: job.agent,
+      topicId: job.topicId,
+    },
+  };
+}
+
 function startCronScheduler(options = {}) {
   const { onTrigger, chatId } = options;
   if (!onTrigger || !chatId) {
@@ -65,11 +77,8 @@ function startCronScheduler(options = {}) {
       const task = cron.schedule(job.cron, async () => {
         console.info(`Cron triggered: ${job.id}`);
         try {
-          await onTrigger(job.chatId || chatId, job.prompt, {
-            jobId: job.id,
-            agent: job.agent,
-            topicId: job.topicId,
-          });
+          const payload = buildCronTriggerPayload(job, chatId);
+          await onTrigger(payload.chatId, payload.prompt, payload.options);
         } catch (err) {
           console.error(`Cron job ${job.id} failed:`, err);
         }
@@ -102,5 +111,6 @@ module.exports = {
   CRON_PATH,
   loadCronJobs,
   saveCronJobs,
+  buildCronTriggerPayload,
   startCronScheduler,
 };

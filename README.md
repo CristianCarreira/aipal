@@ -50,7 +50,7 @@ Open Telegram, send `/start`, then any message.
 - `/reset`: clear the current agent session for this topic (drops the stored session id for this agent)
 - `/model [model_id|reset]`: view/set/reset the model for the current agent (persisted in `config.json`)
 - `/memory [status|tail [n]|search <query>|curate]`: inspect, search, and curate automatic memory
-- `/cron [list|reload|chatid]`: manage cron jobs (see below)
+- `/cron [list|reload|chatid|assign|unassign|run <jobId>]`: manage cron jobs (see below)
 - `/help`: list available commands and scripts
 - `/document_scripts confirm`: generate short descriptions for scripts (writes `scripts.json`; requires `ALLOWED_USERS`)
 - `/<script> [args]`: run an executable script from `~/.config/aipal/scripts`
@@ -86,6 +86,7 @@ Cron jobs are loaded from `~/.config/aipal/cron.json` (or `$XDG_CONFIG_HOME/aipa
 - `/cron chatid`: prints your chat ID (use this value as `cronChatId`).
 - `/cron list`: lists configured jobs.
 - `/cron reload`: reloads `cron.json` without restarting the bot.
+- `/cron run <jobId>`: triggers one job immediately using its configured target chat/topic.
 
 ### Images in responses
 If the agent generates an image, save it under the image folder (default: OS temp under `aipal/images`) and reply with:
@@ -125,11 +126,14 @@ Example:
 
 See `docs/configuration.md` for details.
 
-## Memory + soul files (optional)
-If `soul.md` and/or `memory.md` exist next to `config.json`, their contents are injected into the first prompt of a new conversation (`soul.md` first, then `memory.md`).
+## Bootstrap files (optional)
+If `soul.md`, `tools.md`, and/or `memory.md` exist next to `config.json`, their contents are injected into the first prompt of a new conversation in this order:
+1. `soul.md`
+2. `tools.md`
+3. `memory.md`
 
 Location:
-`~/.config/aipal/soul.md` and `~/.config/aipal/memory.md` (or under `$XDG_CONFIG_HOME/aipal/`).
+`~/.config/aipal/soul.md`, `~/.config/aipal/tools.md`, and `~/.config/aipal/memory.md` (or under `$XDG_CONFIG_HOME/aipal/`).
 
 ### Automatic memory capture
 - Every interaction is captured automatically in per-thread files under `~/.config/aipal/memory/threads/*.jsonl` (or `$XDG_CONFIG_HOME/aipal/memory/threads/*.jsonl`).

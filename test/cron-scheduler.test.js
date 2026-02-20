@@ -97,3 +97,28 @@ test('saveCronJobs preserves topicId and chatId fields', async () => {
   assert.equal(loaded[0].chatId, -100999);
 });
 
+test('buildCronTriggerPayload mirrors scheduler delivery fields', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-cron-'));
+  const { buildCronTriggerPayload } = loadCronScheduler(dir);
+
+  const payload = buildCronTriggerPayload(
+    {
+      id: 'nightly-interests',
+      prompt: 'run now',
+      topicId: 2801,
+      chatId: -1003608686125,
+      agent: 'codex',
+    },
+    123456
+  );
+
+  assert.deepEqual(payload, {
+    chatId: -1003608686125,
+    prompt: 'run now',
+    options: {
+      jobId: 'nightly-interests',
+      agent: 'codex',
+      topicId: 2801,
+    },
+  });
+});

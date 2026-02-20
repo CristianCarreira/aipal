@@ -8,6 +8,7 @@ const CONFIG_PATH = path.join(XDG_CONFIG_HOME, 'aipal', 'config.json');
 const CONFIG_DIR = path.dirname(CONFIG_PATH);
 const MEMORY_PATH = path.join(CONFIG_DIR, 'memory.md');
 const SOUL_PATH = path.join(CONFIG_DIR, 'soul.md');
+const TOOLS_PATH = path.join(CONFIG_DIR, 'tools.md');
 const THREADS_PATH = path.join(CONFIG_DIR, 'threads.json');
 const AGENT_OVERRIDES_PATH = path.join(CONFIG_DIR, 'agent-overrides.json');
 
@@ -53,6 +54,19 @@ async function readSoul() {
     }
     console.warn('Failed to load soul.md:', err);
     return { path: SOUL_PATH, content: '', exists: false };
+  }
+}
+
+async function readTools() {
+  try {
+    const raw = await fs.readFile(TOOLS_PATH, 'utf8');
+    return { path: TOOLS_PATH, content: raw.trim(), exists: true };
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      return { path: TOOLS_PATH, content: '', exists: false };
+    }
+    console.warn('Failed to load tools.md:', err);
+    return { path: TOOLS_PATH, content: '', exists: false };
   }
 }
 
@@ -110,6 +124,7 @@ module.exports = {
   CONFIG_PATH,
   MEMORY_PATH,
   SOUL_PATH,
+  TOOLS_PATH,
   THREADS_PATH,
   AGENT_OVERRIDES_PATH,
   loadThreads,
@@ -117,6 +132,7 @@ module.exports = {
   readConfig,
   readMemory,
   readSoul,
+  readTools,
   saveThreads,
   saveAgentOverrides,
   updateConfig,

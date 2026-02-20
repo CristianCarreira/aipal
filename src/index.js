@@ -18,11 +18,13 @@ const {
   CONFIG_PATH,
   MEMORY_PATH,
   SOUL_PATH,
+  TOOLS_PATH,
   loadAgentOverrides,
   loadThreads,
   readConfig,
   readMemory,
   readSoul,
+  readTools,
   saveAgentOverrides,
   saveThreads,
   updateConfig,
@@ -53,6 +55,7 @@ const {
 const {
   loadCronJobs,
   saveCronJobs,
+  buildCronTriggerPayload,
   startCronScheduler,
 } = require('./cron-scheduler');
 const {
@@ -199,6 +202,7 @@ let memoryEventsSinceCurate = 0;
 let globalThinking;
 let globalAgent = AGENT_CODEX;
 let globalModels = {};
+let cronDefaultChatId = null;
 
 const scriptManager = new ScriptManager(SCRIPTS_DIR);
 
@@ -210,7 +214,7 @@ bot.command('help', async (ctx) => {
     '/model [model_id|reset] - View/set/reset model for current agent',
     '/memory [status|tail|search|curate] - Memory capture + retrieval + curation',
     '/reset - Reset current agent session',
-    '/cron [list|reload|chatid] - Manage cron jobs',
+    '/cron [list|reload|chatid|assign|unassign|run] - Manage cron jobs',
     '/help - Show this help',
     '/document_scripts confirm - Auto-document available scripts (requires ALLOWED_USERS)',
   ];
@@ -403,17 +407,24 @@ async function captureMemoryEvent(event) {
 async function buildBootstrapContext(options = {}) {
   const { threadKey } = options;
   const soul = await readSoul();
+  const tools = await readTools();
   const memory = await readMemory();
   const lines = [
     'Bootstrap config:',
     `Config JSON: ${CONFIG_PATH}`,
     `Soul file: ${SOUL_PATH}`,
+    `Tools file: ${TOOLS_PATH}`,
     `Memory file: ${MEMORY_PATH}`,
   ];
   if (soul.exists && soul.content) {
     lines.push('Soul (soul.md):');
     lines.push(soul.content);
     lines.push('End of soul.');
+  }
+  if (tools.exists && tools.content) {
+    lines.push('Tools (tools.md):');
+    lines.push(tools.content);
+    lines.push('End of tools.');
   }
   if (memory.exists && memory.content) {
     lines.push('Memory (memory.md):');
@@ -1198,6 +1209,31 @@ bot.command('cron', async (ctx) => {
     return;
   }
 
+  if (subcommand === 'run') {
+    const jobId = parts[1];
+    if (!jobId) {
+      await ctx.reply('Usage: /cron run <jobId>');
+      return;
+    }
+    try {
+      const jobs = await loadCronJobs();
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job) {
+        await ctx.reply(`Cron job "${jobId}" not found. Available: ${jobs.map((j) => j.id).join(', ')}`);
+        return;
+      }
+      const payload = buildCronTriggerPayload(job, cronDefaultChatId || ctx.chat.id);
+      const topicLabel = payload.options.topicId ? ` topic ${payload.options.topicId}` : '';
+      const disabledLabel = job.enabled ? '' : ' (disabled in schedule, manual run forced)';
+      await ctx.reply(`Running cron "${job.id}" now -> chat ${payload.chatId}${topicLabel}${disabledLabel}`);
+      await handleCronTrigger(payload.chatId, payload.prompt, payload.options);
+      await ctx.reply(`Cron "${job.id}" finished.`);
+    } catch (err) {
+      await replyWithError(ctx, 'Failed to run cron job.', err);
+    }
+    return;
+  }
+
   if (subcommand === 'reload') {
     if (cronScheduler) {
       const count = await cronScheduler.reload();
@@ -1213,7 +1249,7 @@ bot.command('cron', async (ctx) => {
     return;
   }
 
-  await ctx.reply('Usage: /cron [list|reload|chatid|assign|unassign]');
+  await ctx.reply('Usage: /cron [list|reload|chatid|assign|unassign|run]');
 });
 
 bot.command('memory', async (ctx) => {
@@ -1755,9 +1791,10 @@ loadAgentOverrides()
   .catch((err) => console.warn('Failed to load agent overrides:', err));
 hydrateGlobalSettings()
   .then((config) => {
-    if (config.cronChatId) {
+    cronDefaultChatId = config.cronChatId || null;
+    if (cronDefaultChatId) {
       cronScheduler = startCronScheduler({
-        chatId: config.cronChatId,
+        chatId: cronDefaultChatId,
         onTrigger: handleCronTrigger,
       });
     } else {
