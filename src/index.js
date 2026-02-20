@@ -29,6 +29,7 @@ const {
   setAgentOverride,
 } = require('./agent-overrides');
 const {
+  buildThreadKey,
   buildTopicKey,
   clearThreadForAgent,
   normalizeTopicId,
@@ -105,10 +106,13 @@ const { createAppState } = require('./app/state');
 const { execLocal, shellQuote, wrapCommandWithPty } = require('./services/process');
 const { createEnqueue } = require('./services/queue');
 const { createAgentRunner } = require('./services/agent-runner');
+const { createCronHandler } = require('./services/cron-handler');
 const { createFileService } = require('./services/files');
 const { createMemoryService } = require('./services/memory');
 const { createScriptService } = require('./services/scripts');
 const { createTelegramReplyService } = require('./services/telegram-reply');
+const { bootstrapApp } = require('./app/bootstrap');
+const { initializeApp, installShutdownHooks } = require('./app/lifecycle');
 const { registerCommands } = require('./app/register-commands');
 const { registerHandlers } = require('./app/register-handlers');
 
@@ -261,6 +265,16 @@ const {
   startTyping,
 } = telegramReplyService;
 
+const handleCronTrigger = createCronHandler({
+  bot,
+  buildMemoryThreadKey,
+  captureMemoryEvent,
+  extractMemoryText,
+  resolveEffectiveAgentId,
+  runAgentForChat,
+  sendResponseToChat,
+});
+
 bot.catch((err) => {
   console.error('Bot error', err);
 });
@@ -406,127 +420,36 @@ registerHandlers({
   transcribeAudio,
 });
 
-async function handleCronTrigger(chatId, prompt, options = {}) {
-  const { jobId, agent, topicId } = options;
-  const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId, agent);
-  const memoryThreadKey = buildMemoryThreadKey(chatId, topicId, effectiveAgentId);
-  console.info(`Cron job ${jobId} executing for chat ${chatId} topic=${topicId || 'none'}${agent ? ` (agent: ${agent})` : ''}`);
-  try {
-    const actionExtra = topicId ? { message_thread_id: topicId } : {};
-    await bot.telegram.sendChatAction(chatId, 'typing', actionExtra);
-    await captureMemoryEvent({
-      threadKey: memoryThreadKey,
-      chatId,
-      topicId,
-      agentId: effectiveAgentId,
-      role: 'user',
-      kind: 'cron',
-      text: String(prompt || ''),
-    });
-    const response = await runAgentForChat(chatId, prompt, { agentId: agent, topicId });
-    await captureMemoryEvent({
-      threadKey: memoryThreadKey,
-      chatId,
-      topicId,
-      agentId: effectiveAgentId,
-      role: 'assistant',
-      kind: 'text',
-      text: extractMemoryText(response),
-    });
-    const silentTokens = ['HEARTBEAT_OK', 'CURATION_EMPTY'];
-    const matchedToken = silentTokens.find(t => response.includes(t));
-    if (matchedToken) {
-      console.info(`Cron job ${jobId}: ${matchedToken} (silent)`);
-      return;
-    }
-    await sendResponseToChat(chatId, response, { topicId });
-  } catch (err) {
-    console.error(`Cron job ${jobId} failed:`, err);
-    try {
-      const errExtra = topicId ? { message_thread_id: topicId } : {};
-      await bot.telegram.sendMessage(chatId, `Cron job "${jobId}" failed: ${err.message}`, errExtra);
-    } catch {}
-  }
-}
-
-startImageCleanup();
-startDocumentCleanup();
-loadThreads()
-  .then((loaded) => {
-    threads = loaded;
-    console.info(`Loaded ${threads.size} thread(s) from disk`);
-  })
-  .catch((err) => console.warn('Failed to load threads:', err));
-loadAgentOverrides()
-  .then((loaded) => {
-    agentOverrides = loaded;
-    console.info(`Loaded ${agentOverrides.size} agent override(s) from disk`);
-  })
-  .catch((err) => console.warn('Failed to load agent overrides:', err));
-hydrateGlobalSettings()
-  .then((config) => {
-    cronDefaultChatId = config.cronChatId || null;
-    if (cronDefaultChatId) {
-      cronScheduler = startCronScheduler({
-        chatId: cronDefaultChatId,
-        onTrigger: handleCronTrigger,
-      });
-    } else {
-      console.info('Cron scheduler disabled (no cronChatId in config)');
-    }
-  })
-  .catch((err) => console.warn('Failed to load config settings:', err));
-bot.launch();
-
-let shutdownStarted = false;
-function shutdown(signal) {
-  if (shutdownStarted) return;
-  shutdownStarted = true;
-  console.info(`Shutting down (${signal})...`);
-
-  try {
-    if (cronScheduler && typeof cronScheduler.stop === 'function') {
-      cronScheduler.stop();
-    }
-  } catch (err) {
-    console.warn('Failed to stop cron scheduler:', err);
-  }
-
-  try {
-    bot.stop(signal);
-  } catch (err) {
-    console.warn('Failed to stop bot:', err);
-  }
-
-  const forceTimer = setTimeout(() => {
-    console.warn('Forcing process exit after shutdown timeout.');
-    process.exit(0);
-  }, SHUTDOWN_DRAIN_TIMEOUT_MS + 2000);
-  if (typeof forceTimer.unref === 'function') forceTimer.unref();
-
-  Promise.resolve()
-    .then(async () => {
-      const pending = Array.from(queues.values());
-      if (pending.length > 0) {
-        console.info(`Waiting for ${pending.length} queued job(s) to finish...`);
-        await Promise.race([
-          Promise.allSettled(pending),
-          new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)),
-        ]);
-      }
-      await Promise.race([
-        Promise.allSettled([threadsPersist, agentOverridesPersist, memoryPersist]),
-        new Promise((resolve) => setTimeout(resolve, 2000)),
-      ]);
-    })
-    .catch((err) => {
-      console.warn('Error during shutdown drain:', err);
-    })
-    .finally(() => {
-      clearTimeout(forceTimer);
-      process.exit(0);
-    });
-}
-
-process.once('SIGINT', () => shutdown('SIGINT'));
-process.once('SIGTERM', () => shutdown('SIGTERM'));
+bootstrapApp({
+  bot,
+  initializeApp: () =>
+    initializeApp({
+      handleCronTrigger,
+      hydrateGlobalSettings,
+      loadAgentOverrides,
+      loadThreads,
+      setAgentOverrides: (value) => {
+        agentOverrides = value;
+      },
+      setCronDefaultChatId: (value) => {
+        cronDefaultChatId = value;
+      },
+      setCronScheduler: (value) => {
+        cronScheduler = value;
+      },
+      setThreads: (value) => {
+        threads = value;
+      },
+      startCronScheduler,
+      startDocumentCleanup,
+      startImageCleanup,
+    }),
+  installShutdownHooks: () =>
+    installShutdownHooks({
+      bot,
+      getCronScheduler: () => cronScheduler,
+      getPersistPromises: () => [threadsPersist, agentOverridesPersist, memoryPersist],
+      getQueues: () => queues,
+      shutdownDrainTimeoutMs: SHUTDOWN_DRAIN_TIMEOUT_MS,
+    }),
+});
