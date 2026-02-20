@@ -109,6 +109,7 @@ const { createFileService } = require('./services/files');
 const { createMemoryService } = require('./services/memory');
 const { createScriptService } = require('./services/scripts');
 const { createTelegramReplyService } = require('./services/telegram-reply');
+const { registerCommands } = require('./app/register-commands');
 
 installLogTimestamps();
 
@@ -259,125 +260,6 @@ const {
   startTyping,
 } = telegramReplyService;
 
-bot.command('help', async (ctx) => {
-  const builtIn = [
-    '/start - Hello world',
-    '/agent <name> - Switch agent (codex, claude, gemini, opencode)',
-    '/thinking <level> - Set reasoning effort',
-    '/model [model_id|reset] - View/set/reset model for current agent',
-    '/memory [status|tail|search|curate] - Memory capture + retrieval + curation',
-    '/reset - Reset current agent session',
-    '/cron [list|reload|chatid|assign|unassign|run] - Manage cron jobs',
-    '/help - Show this help',
-    '/document_scripts confirm - Auto-document available scripts (requires ALLOWED_USERS)',
-  ];
-
-  let scripts = [];
-  try {
-    scripts = await scriptManager.listScripts();
-  } catch (err) {
-    console.error('Failed to list scripts', err);
-    scripts = [];
-  }
-
-  const scriptLines = scripts.map((s) => {
-    const llmTag = s.llm?.prompt ? ' [LLM]' : '';
-    const desc = s.description ? ` - ${s.description}` : '';
-    return `- /${s.name}${llmTag}${desc}`;
-  });
-
-  const messageMd = [
-    '**Built-in commands:**',
-    ...builtIn.map((line) => `- ${line}`),
-    '',
-    '**Scripts:**',
-    ...(scriptLines.length ? scriptLines : ['(none)']),
-  ].join('\n');
-
-  const message = markdownToTelegramHtml(messageMd);
-  ctx.reply(message, { parse_mode: 'HTML', disable_web_page_preview: true });
-});
-
-bot.command('document_scripts', async (ctx) => {
-  const chatId = ctx.chat.id;
-  if (allowedUsers.size === 0) {
-    await ctx.reply('ALLOWED_USERS is not configured. /document_scripts is disabled.');
-    return;
-  }
-
-  const value = extractCommandValue(ctx.message.text);
-  const confirmed = value === 'confirm' || value === '--yes';
-  if (!confirmed) {
-    await ctx.reply(
-      [
-        'This will send the first 2000 chars of each script to the active agent',
-        'to generate a short description and write it to `scripts.json`.',
-        '',
-        'Run `/document_scripts confirm` to proceed.',
-      ].join('\n'),
-    );
-    return;
-  }
-
-  await ctx.reply('Scanning for undocumented scripts...');
-
-  enqueue(chatId, async () => {
-    let scripts = [];
-    try {
-      scripts = await scriptManager.listScripts();
-    } catch (err) {
-      await replyWithError(ctx, 'Failed to list scripts', err);
-      return;
-    }
-
-    const undocumented = scripts.filter((script) => !script.description);
-    if (undocumented.length === 0) {
-      await ctx.reply('All scripts are already documented!');
-      return;
-    }
-
-    await ctx.reply(`Found ${undocumented.length} undocumented scripts. Processing...`);
-
-    const stopTyping = startTyping(ctx);
-    try {
-      for (const script of undocumented) {
-        try {
-          const content = await scriptManager.getScriptContent(script.name);
-          const prompt = [
-            'Analyze the following script and provide a very short description (max 10 words).',
-            'Return ONLY the description (no quotes, no extra text).',
-            '',
-            'Script:',
-            content.slice(0, 2000),
-          ].join('\n');
-
-          const description = await runAgentOneShot(prompt);
-          const cleaned = String(description || '')
-            .split(/\r?\n/)[0]
-            .trim()
-            .replace(/^['"]|['"]$/g, '')
-            .slice(0, 140);
-
-          if (!cleaned) {
-            await ctx.reply(`Skipped ${script.name}: empty description`);
-            continue;
-          }
-
-          await scriptManager.updateScriptMetadata(script.name, { description: cleaned });
-          await ctx.reply(`Documented ${script.name}: ${cleaned}`);
-        } catch (err) {
-          console.error(`Failed to document ${script.name}`, err);
-          await ctx.reply(`Failed to document ${script.name}: ${err.message}`);
-        }
-      }
-    } finally {
-      stopTyping();
-    }
-
-    await ctx.reply('Documentation complete. Use /help to see the results.');
-  });
-});
-
 bot.catch((err) => {
   console.error('Bot error', err);
 });
@@ -429,407 +311,68 @@ function getTopicId(ctx) {
 }
 
 bot.start((ctx) => ctx.reply(`Ready. Send a message and I will pass it to ${getAgentLabel(globalAgent)}.`));
-
-bot.command('thinking', async (ctx) => {
-  const value = extractCommandValue(ctx.message.text);
-  if (!value) {
-    if (globalThinking) {
-      ctx.reply(`Current reasoning effort: ${globalThinking}`);
-    } else {
-      ctx.reply('No reasoning effort set. Use /thinking <level>.');
-    }
-    return;
-  }
-  try {
+registerCommands({
+  allowedUsers,
+  bot,
+  buildCronTriggerPayload,
+  buildMemoryThreadKey,
+  buildTopicKey,
+  clearAgentOverride: (chatId, topicId) =>
+    clearAgentOverride(agentOverrides, chatId, topicId),
+  clearModelOverride,
+  clearThreadForAgent: (chatId, topicId, agentId) =>
+    clearThreadForAgent(threads, chatId, topicId, agentId),
+  curateMemory,
+  enqueue,
+  execLocal,
+  extractCommandValue,
+  getAgent,
+  getAgentLabel,
+  getAgentOverride: (chatId, topicId) =>
+    getAgentOverride(agentOverrides, chatId, topicId),
+  getCronDefaultChatId: () => cronDefaultChatId,
+  getCronScheduler: () => cronScheduler,
+  getGlobalAgent: () => globalAgent,
+  getGlobalModels: () => globalModels,
+  getGlobalThinking: () => globalThinking,
+  getMemoryStatus,
+  getThreadTail,
+  getTopicId,
+  handleCronTrigger,
+  isKnownAgent,
+  isModelResetCommand,
+  loadCronJobs,
+  markdownToTelegramHtml,
+  memoryRetrievalLimit: MEMORY_RETRIEVAL_LIMIT,
+  normalizeAgent,
+  normalizeTopicId,
+  persistAgentOverrides,
+  persistMemory,
+  persistThreads,
+  replyWithError,
+  resolveEffectiveAgentId,
+  saveCronJobs,
+  scriptManager,
+  searchMemory,
+  setAgentOverride: (chatId, topicId, agentId) =>
+    setAgentOverride(agentOverrides, chatId, topicId, agentId),
+  setGlobalAgent: (value) => {
+    globalAgent = value;
+  },
+  setGlobalModels: (value) => {
+    globalModels = value;
+  },
+  setGlobalThinking: (value) => {
     globalThinking = value;
-    ctx.reply(`Reasoning effort set to ${value}.`);
-  } catch (err) {
-    console.error(err);
-    await replyWithError(ctx, 'Failed to update reasoning effort.', err);
-  }
-});
-
-bot.command('agent', async (ctx) => {
-  const value = extractCommandValue(ctx.message.text);
-  const topicId = getTopicId(ctx);
-  const normalizedTopic = normalizeTopicId(topicId);
-
-  if (!value) {
-    const effective =
-      getAgentOverride(agentOverrides, ctx.chat.id, topicId) || globalAgent;
-    ctx.reply(
-      `Current agent (${normalizedTopic}): ${getAgentLabel(
-        effective,
-      )}. Use /agent <name> or /agent default.`,
-    );
-    return;
-  }
-
-  if (value === 'default') {
-    if (normalizedTopic === 'root') {
-      ctx.reply('Already using global agent in root topic.');
-      return;
-    }
-    clearAgentOverride(agentOverrides, ctx.chat.id, topicId);
-    persistAgentOverrides().catch((err) =>
-      console.warn('Failed to persist agent overrides:', err),
-    );
-    ctx.reply(
-      `Agent override cleared for ${normalizedTopic}. Now using ${getAgentLabel(
-        globalAgent,
-      )}.`,
-    );
-    return;
-  }
-
-  if (!isKnownAgent(value)) {
-    ctx.reply('Unknown agent. Use /agent codex|claude|gemini|opencode.');
-    return;
-  }
-
-  const normalizedAgent = normalizeAgent(value);
-  if (normalizedTopic === 'root') {
-    globalAgent = normalizedAgent;
-    try {
-      await updateConfig({ agent: normalizedAgent });
-      ctx.reply(`Global agent set to ${getAgentLabel(globalAgent)}.`);
-    } catch (err) {
-      console.error(err);
-      await replyWithError(ctx, 'Failed to persist global agent setting.', err);
-    }
-  } else {
-    setAgentOverride(agentOverrides, ctx.chat.id, topicId, normalizedAgent);
-    persistAgentOverrides().catch((err) =>
-      console.warn('Failed to persist agent overrides:', err),
-    );
-    ctx.reply(`Agent for this topic set to ${getAgentLabel(normalizedAgent)}.`);
-  }
-});
-
-bot.command('reset', async (ctx) => {
-  const topicId = getTopicId(ctx);
-  const effectiveAgentId =
-    getAgentOverride(agentOverrides, ctx.chat.id, topicId) || globalAgent;
-  clearThreadForAgent(threads, ctx.chat.id, topicId, effectiveAgentId);
-  threadTurns.delete(`${buildTopicKey(ctx.chat.id, topicId)}:${effectiveAgentId}`);
-  persistThreads().catch((err) =>
-    console.warn('Failed to persist threads after reset:', err),
-  );
-  try {
-    await persistMemory(() => curateMemory());
-    memoryEventsSinceCurate = 0;
-    await ctx.reply(
-      `Session reset for ${getAgentLabel(
-        effectiveAgentId
-      )} in this topic. Memory curated.`,
-    );
-  } catch (err) {
-    console.warn('Failed to curate memory on reset:', err);
-    await ctx.reply(
-      `Session reset for ${getAgentLabel(
-        effectiveAgentId
-      )} in this topic. Memory curation failed.`,
-    );
-  }
-});
-
-bot.command('model', async (ctx) => {
-  const value = extractCommandValue(ctx.message.text);
-  const agent = getAgent(globalAgent);
-
-  if (!value) {
-    const current = globalModels[globalAgent] || agent.defaultModel || '(default)';
-    let msg = `Current model for ${agent.label}: ${current}. Use /model <model_id> to change or /model reset to clear.`;
-
-    // Try to list available models if the agent supports it
-    if (typeof agent.listModelsCommand === 'function') {
-      const stopTyping = startTyping(ctx);
-      try {
-        const cmd = agent.listModelsCommand();
-        let cmdToRun = cmd;
-        if (agent.needsPty) cmdToRun = wrapCommandWithPty(cmdToRun);
-
-        const output = await execLocal('bash', ['-lc', cmdToRun], { timeout: 30000 }); // Short timeout for listing
-
-        // Use agent-specific parser if available, otherwise just dump output
-        let modelsList = output.trim();
-        if (typeof agent.parseModelList === 'function') {
-          modelsList = agent.parseModelList(modelsList);
-        }
-
-        if (modelsList) {
-          msg += `\n\nAvailable models:\n${modelsList}`;
-        }
-        stopTyping();
-      } catch (err) {
-        msg += `\n(Failed to list models: ${err.message})`;
-        stopTyping();
-      }
-    }
-
-    ctx.reply(msg);
-    return;
-  }
-
-  try {
-    if (isModelResetCommand(value)) {
-      const { nextModels, hadOverride } = clearModelOverride(globalModels, globalAgent);
-      globalModels = nextModels;
-      await updateConfig({ models: globalModels });
-      if (hadOverride) {
-        const current = agent.defaultModel || '(default)';
-        ctx.reply(`Model for ${agent.label} reset. Now using ${current}.`);
-      } else {
-        ctx.reply(`No model override set for ${agent.label}.`);
-      }
-      return;
-    }
-
-    globalModels[globalAgent] = value;
-    await updateConfig({ models: globalModels });
-
-    ctx.reply(`Model for ${agent.label} set to ${value}.`);
-  } catch (err) {
-    console.error(err);
-    await replyWithError(ctx, 'Failed to persist model setting.', err);
-  }
-});
-
-bot.command('cron', async (ctx) => {
-  const value = extractCommandValue(ctx.message.text);
-  const parts = value ? value.split(/\s+/) : [];
-  const subcommand = parts[0]?.toLowerCase();
-
-  if (!subcommand || subcommand === 'list') {
-    try {
-      const jobs = await loadCronJobs();
-      if (jobs.length === 0) {
-        await ctx.reply('No cron jobs configured.');
-        return;
-      }
-      const lines = jobs.map((j) => {
-        const status = j.enabled ? '✅' : '❌';
-        const topicLabel = j.topicId ? ` [📌 Topic ${j.topicId}]` : '';
-        return `${status} ${j.id}: ${j.cron}${topicLabel}`;
-      });
-      await ctx.reply(`Cron jobs:\n${lines.join('\n')}`);
-    } catch (err) {
-      await replyWithError(ctx, 'Failed to list cron jobs.', err);
-    }
-    return;
-  }
-
-  if (subcommand === 'assign') {
-    const jobId = parts[1];
-    if (!jobId) {
-      await ctx.reply('Usage: /cron assign <jobId>');
-      return;
-    }
-    const topicId = getTopicId(ctx);
-    if (!topicId) {
-      await ctx.reply('Send this command from a topic/thread in a group to assign the cron to it.');
-      return;
-    }
-    try {
-      const jobs = await loadCronJobs();
-      const job = jobs.find((j) => j.id === jobId);
-      if (!job) {
-        await ctx.reply(`Cron job "${jobId}" not found. Available: ${jobs.map((j) => j.id).join(', ')}`);
-        return;
-      }
-      job.topicId = topicId;
-      job.chatId = ctx.chat.id;
-      await saveCronJobs(jobs);
-      if (cronScheduler) await cronScheduler.reload();
-      await ctx.reply(`Cron "${jobId}" assigned to this topic (${topicId}).`);
-    } catch (err) {
-      await replyWithError(ctx, 'Failed to assign cron job.', err);
-    }
-    return;
-  }
-
-  if (subcommand === 'unassign') {
-    const jobId = parts[1];
-    if (!jobId) {
-      await ctx.reply('Usage: /cron unassign <jobId>');
-      return;
-    }
-    try {
-      const jobs = await loadCronJobs();
-      const job = jobs.find((j) => j.id === jobId);
-      if (!job) {
-        await ctx.reply(`Cron job "${jobId}" not found.`);
-        return;
-      }
-      delete job.topicId;
-      delete job.chatId;
-      await saveCronJobs(jobs);
-      if (cronScheduler) await cronScheduler.reload();
-      await ctx.reply(`Cron "${jobId}" unassigned. Will send to default chat.`);
-    } catch (err) {
-      await replyWithError(ctx, 'Failed to unassign cron job.', err);
-    }
-    return;
-  }
-
-  if (subcommand === 'run') {
-    const jobId = parts[1];
-    if (!jobId) {
-      await ctx.reply('Usage: /cron run <jobId>');
-      return;
-    }
-    try {
-      const jobs = await loadCronJobs();
-      const job = jobs.find((j) => j.id === jobId);
-      if (!job) {
-        await ctx.reply(`Cron job "${jobId}" not found. Available: ${jobs.map((j) => j.id).join(', ')}`);
-        return;
-      }
-      const payload = buildCronTriggerPayload(job, cronDefaultChatId || ctx.chat.id);
-      const topicLabel = payload.options.topicId ? ` topic ${payload.options.topicId}` : '';
-      const disabledLabel = job.enabled ? '' : ' (disabled in schedule, manual run forced)';
-      await ctx.reply(`Running cron "${job.id}" now -> chat ${payload.chatId}${topicLabel}${disabledLabel}`);
-      await handleCronTrigger(payload.chatId, payload.prompt, payload.options);
-      await ctx.reply(`Cron "${job.id}" finished.`);
-    } catch (err) {
-      await replyWithError(ctx, 'Failed to run cron job.', err);
-    }
-    return;
-  }
-
-  if (subcommand === 'reload') {
-    if (cronScheduler) {
-      const count = await cronScheduler.reload();
-      await ctx.reply(`Cron jobs reloaded. ${count} job(s) scheduled.`);
-    } else {
-      await ctx.reply('Cron scheduler not running. Set cronChatId in config.json first.');
-    }
-    return;
-  }
-
-  if (subcommand === 'chatid') {
-    await ctx.reply(`Your chat ID: ${ctx.chat.id}`);
-    return;
-  }
-
-  await ctx.reply('Usage: /cron [list|reload|chatid|assign|unassign|run]');
-});
-
-bot.command('memory', async (ctx) => {
-  const value = extractCommandValue(ctx.message.text);
-  const parts = value ? value.split(/\s+/).filter(Boolean) : [];
-  const subcommand = (parts[0] || 'status').toLowerCase();
-  const chatId = ctx.chat.id;
-  const topicId = getTopicId(ctx);
-  const topicKey = buildTopicKey(chatId, topicId);
-  const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
-  const threadKey = buildMemoryThreadKey(chatId, topicId, effectiveAgentId);
-
-  if (subcommand === 'status') {
-    try {
-      const status = await getMemoryStatus();
-      const lines = [
-        `Memory file: ${status.memoryPath}`,
-        `Thread files: ${status.threadFiles}`,
-        `Total events: ${status.totalEvents}`,
-        `Indexed events: ${status.indexedEvents}`,
-        `Index path: ${status.indexPath || '(unavailable)'}`,
-        `FTS enabled: ${status.indexSupportsFts ? 'yes' : 'no'}`,
-        `Events today: ${status.eventsToday}`,
-        `Last curated: ${status.lastCuratedAt || '(never)'}`,
-      ];
-      await ctx.reply(lines.join('\n'));
-    } catch (err) {
-      await replyWithError(ctx, 'Failed to read memory status.', err);
-    }
-    return;
-  }
-
-  if (subcommand === 'tail') {
-    const parsed = Number(parts[1] || 10);
-    const limit = Number.isFinite(parsed)
-      ? Math.max(1, Math.min(50, Math.trunc(parsed)))
-      : 10;
-    try {
-      const events = await getThreadTail(threadKey, { limit });
-      if (!events.length) {
-        await ctx.reply('No memory events in this conversation yet.');
-        return;
-      }
-      const lines = events.map((event) => {
-        const ts = String(event.createdAt || '').replace('T', ' ').slice(0, 16);
-        const who = event.role === 'assistant' ? 'assistant' : 'user';
-        const text = String(event.text || '').replace(/\s+/g, ' ').trim();
-        return `- [${ts}] ${who}: ${text}`;
-      });
-      await ctx.reply(lines.join('\n'));
-    } catch (err) {
-      await replyWithError(ctx, 'Failed to read thread memory tail.', err);
-    }
-    return;
-  }
-
-  if (subcommand === 'search') {
-    const query = parts.slice(1).join(' ').trim();
-    if (!query) {
-      await ctx.reply('Usage: /memory search <query>');
-      return;
-    }
-    const parsedLimit = Number(parts[parts.length - 1]);
-    const limit = Number.isFinite(parsedLimit)
-      ? Math.max(1, Math.min(20, Math.trunc(parsedLimit)))
-      : MEMORY_RETRIEVAL_LIMIT;
-    try {
-      const hits = await searchMemory({
-        query,
-        chatId,
-        topicId,
-        agentId: effectiveAgentId,
-        limit,
-      });
-      if (!hits.length) {
-        await ctx.reply('No relevant memory found for that query.');
-        return;
-      }
-      const lines = hits.map((hit) => {
-        const ts = String(hit.createdAt || '').replace('T', ' ').slice(0, 16);
-        const who = hit.role === 'assistant' ? 'assistant' : 'user';
-        const text = String(hit.text || '').replace(/\s+/g, ' ').trim();
-        const score = Number(hit.score || 0).toFixed(2);
-        return `- [${ts}] (${hit.scope}, ${who}, score=${score}) ${text}`;
-      });
-      await ctx.reply(lines.join('\n'));
-    } catch (err) {
-      await replyWithError(ctx, 'Memory search failed.', err);
-    }
-    return;
-  }
-
-  if (subcommand === 'curate') {
-    enqueue(`${topicKey}:memory-curate`, async () => {
-      const stopTyping = startTyping(ctx);
-      try {
-        const result = await persistMemory(() => curateMemory());
-        memoryEventsSinceCurate = 0;
-        await ctx.reply(
-          [
-            `Memory curated.`,
-            `Events processed: ${result.eventsProcessed}`,
-            `Thread files: ${result.threadFiles}`,
-            `Output bytes: ${result.bytes}`,
-            `Updated: ${result.lastCuratedAt}`,
-          ].join('\n')
-        );
-      } catch (err) {
-        await replyWithError(ctx, 'Memory curation failed.', err);
-      } finally {
-        stopTyping();
-      }
-    });
-    return;
-  }
-
-  await ctx.reply('Usage: /memory [status|tail [n]|search <query>|curate]');
+  },
+  setMemoryEventsSinceCurate: (value) => {
+    memoryEventsSinceCurate = value;
+  },
+  startTyping,
+  threadTurns,
+  updateConfig,
+  wrapCommandWithPty,
+  runAgentOneShot,
 });
 
 bot.on('text', (ctx) => {
