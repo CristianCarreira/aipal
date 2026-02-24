@@ -1,5 +1,8 @@
+const PROCESSING_DELAY_MS = 5000;
+
 function registerMediaHandlers(options) {
   const {
+    addActiveTask,
     bot,
     buildMemoryThreadKey,
     buildTopicKey,
@@ -16,6 +19,7 @@ function registerMediaHandlers(options) {
     replyWithError,
     replyWithResponse,
     replyWithTranscript,
+    removeActiveTask,
     resolveEffectiveAgentId,
     runAgentForChat,
     safeUnlink,
@@ -27,15 +31,19 @@ function registerMediaHandlers(options) {
 
   function dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, runOptions) {
     const extra = topicId ? { message_thread_id: topicId } : {};
-    bot.telegram.sendMessage(chatId, 'Processing...', extra).catch(() => {});
+    const taskEntry = addActiveTask({ chatId, topicId, prompt });
 
     const work = (async () => {
       const stopTyping = startTyping(ctx);
+      const ackTimer = setTimeout(() => {
+        bot.telegram.sendMessage(chatId, 'Processing...', extra).catch(() => {});
+      }, PROCESSING_DELAY_MS);
       try {
         const response = await runAgentForChat(chatId, prompt, {
           topicId,
           ...runOptions,
         });
+        clearTimeout(ackTimer);
         await captureMemoryEvent({
           threadKey: memoryThreadKey,
           chatId,
@@ -47,12 +55,14 @@ function registerMediaHandlers(options) {
         });
         await sendResponseToChat(chatId, response, { topicId });
       } catch (err) {
+        clearTimeout(ackTimer);
         console.error('Agent call failed:', err);
         await bot.telegram
           .sendMessage(chatId, `Error: ${err.message}`, extra)
           .catch(() => {});
       } finally {
         stopTyping();
+        removeActiveTask(taskEntry);
       }
     })();
     trackAgentWork(work);

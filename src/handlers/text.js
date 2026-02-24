@@ -1,5 +1,8 @@
+const PROCESSING_DELAY_MS = 5000;
+
 function registerTextHandler(options) {
   const {
+    addActiveTask,
     bot,
     buildMemoryThreadKey,
     buildTopicKey,
@@ -8,9 +11,11 @@ function registerTextHandler(options) {
     enqueue,
     extractMemoryText,
     formatScriptContext,
+    getActiveTasksSummary,
     getTopicId,
     lastScriptOutputs,
     parseSlashCommand,
+    removeActiveTask,
     replyWithError,
     replyWithResponse,
     resolveEffectiveAgentId,
@@ -24,15 +29,19 @@ function registerTextHandler(options) {
 
   function dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, runOptions) {
     const extra = topicId ? { message_thread_id: topicId } : {};
-    bot.telegram.sendMessage(chatId, 'Processing...', extra).catch(() => {});
+    const taskEntry = addActiveTask({ chatId, topicId, prompt });
 
     const work = (async () => {
       const stopTyping = startTyping(ctx);
+      const ackTimer = setTimeout(() => {
+        bot.telegram.sendMessage(chatId, 'Processing...', extra).catch(() => {});
+      }, PROCESSING_DELAY_MS);
       try {
         const response = await runAgentForChat(chatId, prompt, {
           topicId,
           ...runOptions,
         });
+        clearTimeout(ackTimer);
         await captureMemoryEvent({
           threadKey: memoryThreadKey,
           chatId,
@@ -44,12 +53,14 @@ function registerTextHandler(options) {
         });
         await sendResponseToChat(chatId, response, { topicId });
       } catch (err) {
+        clearTimeout(ackTimer);
         console.error('Agent call failed:', err);
         await bot.telegram
           .sendMessage(chatId, `Error: ${err.message}`, extra)
           .catch(() => {});
       } finally {
         stopTyping();
+        removeActiveTask(taskEntry);
       }
     })();
     trackAgentWork(work);
@@ -155,7 +166,9 @@ function registerTextHandler(options) {
           text,
         });
         const scriptContext = consumeScriptContext(topicKey);
-        dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, text, { scriptContext });
+        const activeContext = getActiveTasksSummary(chatId);
+        const effectivePrompt = activeContext ? `${activeContext}\n\n${text}` : text;
+        dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, effectivePrompt, { scriptContext });
       } catch (err) {
         console.error(err);
         await replyWithError(ctx, 'Error processing response.', err);

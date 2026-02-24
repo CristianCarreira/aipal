@@ -163,6 +163,28 @@ function trackAgentWork(work) {
   work.finally(() => pendingAgentWork.delete(work));
 }
 
+const activeTasks = [];
+function addActiveTask({ chatId, topicId, prompt }) {
+  const entry = { chatId, topicId, prompt, startTime: Date.now() };
+  activeTasks.push(entry);
+  return entry;
+}
+function removeActiveTask(entry) {
+  const idx = activeTasks.indexOf(entry);
+  if (idx >= 0) activeTasks.splice(idx, 1);
+}
+function getActiveTasksSummary(chatId) {
+  const active = activeTasks.filter((t) => t.chatId === chatId);
+  if (active.length === 0) return '';
+  const lines = active.map((t, i) => {
+    const elapsed = Math.round((Date.now() - t.startTime) / 1000);
+    const preview =
+      t.prompt.length > 150 ? t.prompt.slice(0, 150) + '...' : t.prompt;
+    return `${i + 1}. "${preview}" (running for ${elapsed}s)`;
+  });
+  return `[Active tasks in this conversation:\n${lines.join('\n')}]`;
+}
+
 const scriptManager = new ScriptManager(SCRIPTS_DIR);
 const scriptService = createScriptService({
   execLocal,
@@ -396,6 +418,7 @@ registerCommands({
 });
 
 registerHandlers({
+  addActiveTask,
   bot,
   buildMemoryThreadKey,
   buildTopicKey,
@@ -404,6 +427,8 @@ registerHandlers({
   documentDir: DOCUMENT_DIR,
   downloadTelegramFile,
   enqueue,
+  getActiveTasksSummary,
+  removeActiveTask,
   trackAgentWork,
   extractMemoryText,
   formatScriptContext,

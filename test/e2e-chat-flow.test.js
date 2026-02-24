@@ -44,6 +44,19 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   function trackAgentWork(work) {
     agentWorkPromises.push(work);
   }
+  const activeTasks = [];
+  function addActiveTask(entry) {
+    const task = { ...entry, startTime: Date.now() };
+    activeTasks.push(task);
+    return task;
+  }
+  function removeActiveTask(entry) {
+    const idx = activeTasks.indexOf(entry);
+    if (idx >= 0) activeTasks.splice(idx, 1);
+  }
+  function getActiveTasksSummary() {
+    return '';
+  }
   const threadTurns = new Map();
   const threads = new Map();
   const capturedEvents = [];
@@ -136,12 +149,15 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   const resolveEffectiveAgentId = () => 'fake';
 
   registerTextHandler({
+    addActiveTask,
     bot,
     buildMemoryThreadKey: buildThreadKey,
     buildTopicKey,
     captureMemoryEvent,
     consumeScriptContext: () => '',
     enqueue,
+    getActiveTasksSummary,
+    removeActiveTask,
     trackAgentWork,
     extractMemoryText,
     formatScriptContext: () => '',
