@@ -106,6 +106,7 @@ const { createAppState } = require('./app/state');
 const { execLocal, shellQuote, wrapCommandWithPty } = require('./services/process');
 const { createEnqueue } = require('./services/queue');
 const { createAgentRunner } = require('./services/agent-runner');
+const { createBackgroundTaskManager } = require('./services/background-tasks');
 const { createCronHandler } = require('./services/cron-handler');
 const { createFileService } = require('./services/files');
 const { createMemoryService } = require('./services/memory');
@@ -275,6 +276,16 @@ const handleCronTrigger = createCronHandler({
   sendResponseToChat,
 });
 
+const backgroundTasks = createBackgroundTaskManager({
+  bot,
+  buildMemoryThreadKey,
+  captureMemoryEvent,
+  extractMemoryText,
+  resolveEffectiveAgentId,
+  runAgentForChat,
+  sendResponseToChat,
+});
+
 bot.catch((err) => {
   console.error('Bot error', err);
 });
@@ -328,6 +339,7 @@ function getTopicId(ctx) {
 bot.start((ctx) => ctx.reply(`Ready. Send a message and I will pass it to ${getAgentLabel(globalAgent)}.`));
 registerCommands({
   allowedUsers,
+  backgroundTasks,
   bot,
   buildCronTriggerPayload,
   buildMemoryThreadKey,
@@ -391,6 +403,7 @@ registerCommands({
 });
 
 registerHandlers({
+  backgroundTasks,
   bot,
   buildMemoryThreadKey,
   buildTopicKey,
@@ -446,6 +459,7 @@ bootstrapApp({
     }),
   installShutdownHooks: () =>
     installShutdownHooks({
+      backgroundTasks,
       bot,
       getCronScheduler: () => cronScheduler,
       getPersistPromises: () => [threadsPersist, agentOverridesPersist, memoryPersist],

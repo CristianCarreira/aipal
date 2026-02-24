@@ -1,5 +1,6 @@
 function registerTextHandler(options) {
   const {
+    backgroundTasks,
     bot,
     buildMemoryThreadKey,
     buildTopicKey,
@@ -41,12 +42,12 @@ function registerTextHandler(options) {
           'cron',
           'help',
           'document_scripts',
+          'status',
         ].includes(normalized)
       ) {
         return;
       }
       enqueue(topicKey, async () => {
-        const stopTyping = startTyping(ctx);
         const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
         const memoryThreadKey = buildMemoryThreadKey(
           chatId,
@@ -80,21 +81,10 @@ function registerTextHandler(options) {
               name: slash.name,
               output,
             });
-            const response = await runAgentForChat(chatId, llmPrompt, {
-              topicId,
+            const task = backgroundTasks.dispatch(chatId, topicId, llmPrompt, {
               scriptContext,
             });
-            await captureMemoryEvent({
-              threadKey: memoryThreadKey,
-              chatId,
-              topicId,
-              agentId: effectiveAgentId,
-              role: 'assistant',
-              kind: 'text',
-              text: extractMemoryText(response),
-            });
-            stopTyping();
-            await replyWithResponse(ctx, response);
+            await ctx.reply(`Task #${task.id} started.`);
             return;
           }
           lastScriptOutputs.set(topicKey, { name: slash.name, output });
@@ -107,11 +97,9 @@ function registerTextHandler(options) {
             kind: 'text',
             text: extractMemoryText(output),
           });
-          stopTyping();
           await replyWithResponse(ctx, output);
         } catch (err) {
           console.error(err);
-          stopTyping();
           await replyWithError(ctx, `Error running /${slash.name}.`, err);
         }
       });
@@ -119,7 +107,6 @@ function registerTextHandler(options) {
     }
 
     enqueue(topicKey, async () => {
-      const stopTyping = startTyping(ctx);
       const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
       const memoryThreadKey = buildMemoryThreadKey(
         chatId,
@@ -137,24 +124,12 @@ function registerTextHandler(options) {
           text,
         });
         const scriptContext = consumeScriptContext(topicKey);
-        const response = await runAgentForChat(chatId, text, {
-          topicId,
+        const task = backgroundTasks.dispatch(chatId, topicId, text, {
           scriptContext,
         });
-        await captureMemoryEvent({
-          threadKey: memoryThreadKey,
-          chatId,
-          topicId,
-          agentId: effectiveAgentId,
-          role: 'assistant',
-          kind: 'text',
-          text: extractMemoryText(response),
-        });
-        stopTyping();
-        await replyWithResponse(ctx, response);
+        await ctx.reply(`Task #${task.id} started.`);
       } catch (err) {
         console.error(err);
-        stopTyping();
         await replyWithError(ctx, 'Error processing response.', err);
       }
     });

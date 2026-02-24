@@ -15,6 +15,7 @@ const {
 } = require('../src/message-utils');
 const { createEnqueue } = require('../src/services/queue');
 const { createAgentRunner } = require('../src/services/agent-runner');
+const { createBackgroundTaskManager } = require('../src/services/background-tasks');
 const { createTelegramReplyService } = require('../src/services/telegram-reply');
 const { buildThreadKey, buildTopicKey, resolveThreadId } = require('../src/thread-store');
 
@@ -32,6 +33,12 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     on(event, handler) {
       this.handlers.set(event, handler);
     },
+    telegram: {
+      sendChatAction: async () => {},
+      sendMessage: async () => {},
+      sendPhoto: async () => {},
+      sendDocument: async () => {},
+    },
   };
 
   const queues = new Map();
@@ -43,6 +50,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   const promptHistory = [];
   const buildCalls = [];
   const replies = [];
+  const sentResponses = [];
 
   const agent = {
     id: 'fake',
@@ -121,7 +129,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   });
 
   const replyService = createTelegramReplyService({
-    bot: { telegram: {} },
+    bot,
     chunkMarkdown,
     chunkText,
     documentDir,
@@ -133,16 +141,33 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     markdownToTelegramHtml,
   });
 
+  const captureMemoryEvent = async (event) => {
+    capturedEvents.push(event);
+  };
+  const extractMemoryText = (value) => String(value || '');
+  const resolveEffectiveAgentId = () => 'fake';
+
+  const backgroundTasks = createBackgroundTaskManager({
+    bot,
+    buildMemoryThreadKey: buildThreadKey,
+    captureMemoryEvent,
+    extractMemoryText,
+    resolveEffectiveAgentId,
+    runAgentForChat: agentRunner.runAgentForChat,
+    sendResponseToChat: async (chatId, response, sendOpts) => {
+      sentResponses.push({ chatId, response, sendOpts });
+    },
+  });
+
   registerTextHandler({
+    backgroundTasks,
     bot,
     buildMemoryThreadKey: buildThreadKey,
     buildTopicKey,
-    captureMemoryEvent: async (event) => {
-      capturedEvents.push(event);
-    },
+    captureMemoryEvent,
     consumeScriptContext: () => '',
     enqueue,
-    extractMemoryText: (value) => String(value || ''),
+    extractMemoryText,
     formatScriptContext: () => '',
     getTopicId: () => undefined,
     lastScriptOutputs: new Map(),
@@ -151,7 +176,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
       await ctx.reply(message);
     },
     replyWithResponse: replyService.replyWithResponse,
-    resolveEffectiveAgentId: () => 'fake',
+    resolveEffectiveAgentId,
     runAgentForChat: agentRunner.runAgentForChat,
     runScriptCommand: async () => '',
     scriptManager: { getScriptMetadata: async () => ({}) },
@@ -179,11 +204,21 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   }
 
   await sendText('Hola equipo');
-  await sendText('¿Seguimos por el mismo hilo?');
+  // Wait for background task to complete before sending next message
+  await Promise.all(backgroundTasks.getPendingPromises());
 
+  await sendText('¿Seguimos por el mismo hilo?');
+  await Promise.all(backgroundTasks.getPendingPromises());
+
+  // Immediate replies are "Task #N started."
   assert.equal(replies.length, 2);
-  assert.equal(replies[0].value, 'Primera respuesta');
-  assert.equal(replies[1].value, 'Segunda respuesta');
+  assert.equal(replies[0].value, 'Task #1 started.');
+  assert.equal(replies[1].value, 'Task #2 started.');
+
+  // Agent responses are sent via sendResponseToChat
+  assert.equal(sentResponses.length, 2);
+  assert.equal(sentResponses[0].response, 'Primera respuesta');
+  assert.equal(sentResponses[1].response, 'Segunda respuesta');
 
   assert.equal(buildCalls.length, 2);
   assert.equal(buildCalls[0].threadId, undefined);
@@ -197,6 +232,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   assert.match(secondPrompt, /\u00bfSeguimos por el mismo hilo\?/);
   assert.doesNotMatch(secondPrompt, /BOOTSTRAP\(/);
 
+  // User events captured in handler, assistant events captured in background task
   assert.equal(capturedEvents.length, 4);
   assert.deepEqual(
     capturedEvents.map((event) => `${event.role}:${event.kind}`),
