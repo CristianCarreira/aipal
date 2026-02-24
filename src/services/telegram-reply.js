@@ -1,7 +1,10 @@
 const fs = require('fs/promises');
 
 function stripAnsi(value) {
-  return String(value || '').replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '');
+  return String(value || '')
+    .replace(/\x1B\[[0-9;:<=>?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '')
+    .replace(/\x1B[@-Z\\-_]/g, '');
 }
 
 function extractJsonResult(value) {

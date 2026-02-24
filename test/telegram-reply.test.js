@@ -131,9 +131,13 @@ test('sendResponseToChat preserves topicId in telegram sendMessage', async () =>
 test('stripAnsi removes ANSI escape sequences', () => {
   assert.equal(stripAnsi('\x1b[1mBold\x1b[0m'), 'Bold');
   assert.equal(stripAnsi('\x1b[31mred\x1b[0m text'), 'red text');
-  assert.equal(stripAnsi('\x1b]9;4;0;\x1b\\clean'), '\x1b]9;4;0;\x1b\\clean');
   assert.equal(stripAnsi('no escapes'), 'no escapes');
   assert.equal(stripAnsi(''), '');
+  // OSC sequences (e.g. terminal progress reporting)
+  assert.equal(stripAnsi('\x1b]9;4;0;\x07clean'), 'clean');
+  assert.equal(stripAnsi('\x1b]9;4;0;\x1b\\clean'), 'clean');
+  // CSI with extended parameter prefixes (e.g. kitty keyboard protocol)
+  assert.equal(stripAnsi('\x1b[<utext'), 'text');
 });
 
 test('extractJsonResult extracts result from Claude JSON', () => {
