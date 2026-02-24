@@ -7,10 +7,10 @@ function shellQuote(value) {
 
 function wrapCommandWithPty(command, envKey) {
   if (envKey) {
-    const python = `import pty,os; pty.spawn(["bash","-lc",os.environ["${envKey}"]])`;
+    const python = `import pty,os; pty.spawn(["bash","-c",os.environ["${envKey}"]])`;
     return `python3 -c ${shellQuote(python)}`;
   }
-  const python = 'import pty,sys; pty.spawn(["bash","-lc", sys.argv[1]])';
+  const python = 'import pty,sys; pty.spawn(["bash","-c", sys.argv[1]])';
   return `python3 -c ${shellQuote(python)} ${shellQuote(command)}`;
 }
 
