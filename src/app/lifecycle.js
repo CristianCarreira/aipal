@@ -50,6 +50,7 @@ function initializeApp(options) {
 
 function installShutdownHooks(options) {
   const {
+    backgroundTasks,
     bot,
     getCronScheduler,
     getPersistPromises,
@@ -94,6 +95,16 @@ function installShutdownHooks(options) {
             Promise.allSettled(pending),
             new Promise((resolve) => setTimeout(resolve, shutdownDrainTimeoutMs)),
           ]);
+        }
+        if (backgroundTasks) {
+          const bgPending = backgroundTasks.getPendingPromises();
+          if (bgPending.length > 0) {
+            console.info(`Waiting for ${bgPending.length} background task(s) to finish...`);
+            await Promise.race([
+              Promise.allSettled(bgPending),
+              new Promise((resolve) => setTimeout(resolve, shutdownDrainTimeoutMs)),
+            ]);
+          }
         }
         await Promise.race([
           Promise.allSettled(getPersistPromises()),

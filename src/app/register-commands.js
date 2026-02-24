@@ -2,12 +2,14 @@ const { registerCronCommand } = require('../commands/cron');
 const { registerHelpCommands } = require('../commands/help');
 const { registerMemoryCommand } = require('../commands/memory');
 const { registerSettingsCommands } = require('../commands/settings');
+const { registerStatusCommand } = require('../commands/status');
 
 function registerCommands(options) {
   registerHelpCommands(options);
   registerSettingsCommands(options);
   registerCronCommand(options);
   registerMemoryCommand(options);
+  registerStatusCommand(options);
 }
 
 module.exports = {
