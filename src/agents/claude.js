@@ -1,7 +1,8 @@
-const { shellQuote, resolvePromptValue } = require('./utils');
+const { resolvePromptValue } = require('./utils');
 
 const CLAUDE_CMD = 'claude';
 const CLAUDE_OUTPUT_FORMAT = 'json';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function safeJsonParse(value) {
   try {
@@ -28,7 +29,7 @@ function buildCommand({ prompt, promptExpression, threadId }) {
     '--dangerously-skip-permissions',
   ];
   if (threadId) {
-    args.push('--resume', shellQuote(threadId));
+    args.push('--resume', threadId);
   }
   return `${CLAUDE_CMD} ${args.join(' ')}`.trim();
 }
@@ -49,12 +50,16 @@ function parseOutput(output) {
   if (!payload || typeof payload !== 'object') {
     return { text: trimmed, threadId: undefined, sawJson: false };
   }
-  const threadId =
+  const rawThreadId =
     payload.session_id ||
     payload.sessionId ||
     payload.conversation_id ||
     payload.conversationId ||
     undefined;
+  const threadId =
+    typeof rawThreadId === 'string' && UUID_REGEX.test(rawThreadId.trim())
+      ? rawThreadId.trim()
+      : undefined;
   let text = payload.result;
   if (typeof text !== 'string') {
     text = payload.text;
