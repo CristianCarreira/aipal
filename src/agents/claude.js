@@ -1,4 +1,4 @@
-const { resolvePromptValue } = require('./utils');
+const { shellQuote, resolvePromptValue } = require('./utils');
 
 const CLAUDE_CMD = 'claude';
 const CLAUDE_OUTPUT_FORMAT = 'json';
@@ -29,7 +29,7 @@ function buildCommand({ prompt, promptExpression, threadId, threadIdExpression }
     '--dangerously-skip-permissions',
   ];
   if (threadId) {
-    args.push('--resume', threadIdExpression || threadId);
+    args.push('--resume', shellQuote(threadId));
   }
   return `${CLAUDE_CMD} ${args.join(' ')}`.trim();
 }

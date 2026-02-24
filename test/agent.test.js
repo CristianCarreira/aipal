@@ -75,10 +75,10 @@ test('buildAgentCommand builds claude headless command with resume', () => {
   assert.match(command, /-p 'hello'/);
   assert.match(command, /--output-format json/);
   assert.match(command, /--dangerously-skip-permissions/);
-  assert.match(command, /--resume 550e8400-e29b-41d4-a716-446655440000/);
+  assert.match(command, /--resume '550e8400-e29b-41d4-a716-446655440000'/);
 });
 
-test('buildAgentCommand uses threadIdExpression for claude resume', () => {
+test('buildAgentCommand uses shellQuote for claude resume regardless of threadIdExpression', () => {
   const agent = getAgent('claude');
   const sessionId = '550e8400-e29b-41d4-a716-446655440000';
   const command = agent.buildCommand({
@@ -86,8 +86,8 @@ test('buildAgentCommand uses threadIdExpression for claude resume', () => {
     threadId: sessionId,
     threadIdExpression: '"$AIPAL_THREAD_ID"',
   });
-  assert.match(command, /--resume "\$AIPAL_THREAD_ID"/);
-  assert.doesNotMatch(command, /--resume 550e8400/);
+  assert.match(command, /--resume '550e8400-e29b-41d4-a716-446655440000'/);
+  assert.doesNotMatch(command, /AIPAL_THREAD_ID/);
 });
 
 test('parseAgentOutput extracts claude session and result', () => {
