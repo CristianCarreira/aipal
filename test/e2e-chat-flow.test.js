@@ -86,7 +86,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     execLocal: async (_cmd, args, options) => {
       const command = args[1];
       commandHistory.push(command);
-      promptHistory.push((options && options.env && options.env.PROMPT) || '');
+      promptHistory.push((options && options.env && options.env.AIPAL_PROMPT) || '');
       if (command.includes('--thread new')) {
         return [
           JSON.stringify({ type: 'thread.started', thread_id: 'thread-1' }),

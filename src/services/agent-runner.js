@@ -35,7 +35,7 @@ function createAgentRunner(options) {
         timeZone: defaultTimeZone,
       });
     }
-    const promptExpression = '"$PROMPT"';
+    const promptExpression = '"$AIPAL_PROMPT"';
     const agentCmd = agent.buildCommand({
       prompt: promptText,
       promptExpression,
@@ -59,7 +59,7 @@ function createAgentRunner(options) {
       output = await execLocal('bash', ['-lc', commandToRun], {
         timeout: agentTimeoutMs,
         maxBuffer: agentMaxBuffer,
-        env: { ...process.env, PROMPT: promptText },
+        env: { ...process.env, AIPAL_PROMPT: promptText },
       });
     } catch (err) {
       execError = err;
@@ -147,7 +147,7 @@ function createAgentRunner(options) {
       documentDir,
       { includeFileInstructions: shouldIncludeFileInstructions }
     );
-    const promptExpression = '"$PROMPT"';
+    const promptExpression = '"$AIPAL_PROMPT"';
     const agentCmd = agent.buildCommand({
       prompt: finalPrompt,
       promptExpression,
@@ -173,7 +173,7 @@ function createAgentRunner(options) {
       output = await execLocal('bash', ['-lc', commandToRun], {
         timeout: agentTimeoutMs,
         maxBuffer: agentMaxBuffer,
-        env: { ...process.env, PROMPT: finalPrompt },
+        env: { ...process.env, AIPAL_PROMPT: finalPrompt },
       });
     } catch (err) {
       execError = err;
