@@ -1,5 +1,35 @@
 const fs = require('fs/promises');
 
+function stripAnsi(value) {
+  return String(value || '').replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '');
+}
+
+function extractJsonResult(value) {
+  const text = String(value || '').trim();
+  if (!text.startsWith('{')) return text;
+  try {
+    const payload = JSON.parse(text);
+    if (payload && typeof payload === 'object') {
+      const result =
+        typeof payload.result === 'string'
+          ? payload.result
+          : typeof payload.text === 'string'
+            ? payload.text
+            : typeof payload.output === 'string'
+              ? payload.output
+              : null;
+      if (result !== null) return result.trim();
+    }
+  } catch {
+    // not JSON, return as-is
+  }
+  return text;
+}
+
+function sanitizeResponse(value) {
+  return extractJsonResult(stripAnsi(value));
+}
+
 function createTelegramReplyService(options) {
   const {
     bot,
@@ -36,8 +66,9 @@ function createTelegramReplyService(options) {
   }
 
   async function replyWithResponse(ctx, response) {
+    const sanitized = sanitizeResponse(response);
     const { cleanedText: afterImages, imagePaths } = extractImageTokens(
-      response || '',
+      sanitized,
       imageDir
     );
     const { cleanedText, documentPaths } = extractDocumentTokens(
@@ -106,8 +137,9 @@ function createTelegramReplyService(options) {
   async function sendResponseToChat(chatId, response, sendOptions = {}) {
     const { topicId } = sendOptions;
     const threadExtra = topicId ? { message_thread_id: topicId } : {};
+    const sanitized = sanitizeResponse(response);
     const { cleanedText: afterImages, imagePaths } = extractImageTokens(
-      response || '',
+      sanitized,
       imageDir
     );
     const { cleanedText, documentPaths } = extractDocumentTokens(
@@ -162,4 +194,7 @@ function createTelegramReplyService(options) {
 
 module.exports = {
   createTelegramReplyService,
+  sanitizeResponse,
+  stripAnsi,
+  extractJsonResult,
 };

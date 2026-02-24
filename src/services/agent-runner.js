@@ -36,7 +36,6 @@ function createAgentRunner(options) {
         timeZone: defaultTimeZone,
       });
     }
-    const promptBase64 = Buffer.from(promptText, 'utf8').toString('base64');
     const promptExpression = '"$PROMPT"';
     const agentCmd = agent.buildCommand({
       prompt: promptText,
@@ -46,8 +45,7 @@ function createAgentRunner(options) {
     });
 
     const command = [
-      `PROMPT_B64=${shellQuote(promptBase64)};`,
-      'PROMPT=$(printf %s "$PROMPT_B64" | base64 --decode);',
+      `PROMPT=${shellQuote(promptText)};`,
       `${agentCmd}`,
     ].join(' ');
 
@@ -154,7 +152,6 @@ function createAgentRunner(options) {
       documentDir,
       { includeFileInstructions: shouldIncludeFileInstructions }
     );
-    const promptBase64 = Buffer.from(finalPrompt, 'utf8').toString('base64');
     const promptExpression = '"$PROMPT"';
     const agentCmd = agent.buildCommand({
       prompt: finalPrompt,
@@ -164,8 +161,7 @@ function createAgentRunner(options) {
       model: getGlobalModels()[effectiveAgentId],
     });
     const command = [
-      `PROMPT_B64=${shellQuote(promptBase64)};`,
-      'PROMPT=$(printf %s "$PROMPT_B64" | base64 --decode);',
+      `PROMPT=${shellQuote(finalPrompt)};`,
       `${agentCmd}`,
     ].join(' ');
     let commandToRun = command;

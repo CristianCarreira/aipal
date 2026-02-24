@@ -4,7 +4,12 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { createTelegramReplyService } = require('../src/services/telegram-reply');
+const {
+  createTelegramReplyService,
+  sanitizeResponse,
+  stripAnsi,
+  extractJsonResult,
+} = require('../src/services/telegram-reply');
 
 test('replyWithResponse sends formatted text chunk', async () => {
   const replies = [];
@@ -121,4 +126,75 @@ test('sendResponseToChat preserves topicId in telegram sendMessage', async () =>
   assert.equal(sentMessages.length, 2);
   assert.equal(sentMessages[0].options.message_thread_id, 99);
   assert.equal(sentMessages[1].options.message_thread_id, 99);
+});
+
+test('stripAnsi removes ANSI escape sequences', () => {
+  assert.equal(stripAnsi('\x1b[1mBold\x1b[0m'), 'Bold');
+  assert.equal(stripAnsi('\x1b[31mred\x1b[0m text'), 'red text');
+  assert.equal(stripAnsi('\x1b]9;4;0;\x1b\\clean'), '\x1b]9;4;0;\x1b\\clean');
+  assert.equal(stripAnsi('no escapes'), 'no escapes');
+  assert.equal(stripAnsi(''), '');
+});
+
+test('extractJsonResult extracts result from Claude JSON', () => {
+  const json = JSON.stringify({ type: 'result', result: 'hello world' });
+  assert.equal(extractJsonResult(json), 'hello world');
+});
+
+test('extractJsonResult extracts text field as fallback', () => {
+  const json = JSON.stringify({ type: 'result', text: 'fallback text' });
+  assert.equal(extractJsonResult(json), 'fallback text');
+});
+
+test('extractJsonResult extracts output field as fallback', () => {
+  const json = JSON.stringify({ output: 'output text' });
+  assert.equal(extractJsonResult(json), 'output text');
+});
+
+test('extractJsonResult returns plain text unchanged', () => {
+  assert.equal(extractJsonResult('just plain text'), 'just plain text');
+});
+
+test('extractJsonResult returns JSON as-is when no known fields', () => {
+  const json = JSON.stringify({ foo: 'bar' });
+  assert.equal(extractJsonResult(json), json);
+});
+
+test('sanitizeResponse strips ANSI then extracts JSON result', () => {
+  const raw = '\x1b[1m' + JSON.stringify({ result: 'clean output' }) + '\x1b[0m';
+  assert.equal(sanitizeResponse(raw), 'clean output');
+});
+
+test('sanitizeResponse handles plain text with ANSI', () => {
+  assert.equal(sanitizeResponse('\x1b[31mhello\x1b[0m'), 'hello');
+});
+
+test('replyWithResponse sanitizes JSON response before sending', async () => {
+  const replies = [];
+  const ctx = {
+    reply: async (text, options) => {
+      replies.push({ text, options });
+    },
+    replyWithPhoto: async () => {},
+    replyWithDocument: async () => {},
+  };
+
+  const service = createTelegramReplyService({
+    bot: { telegram: {} },
+    chunkMarkdown: (text) => [text],
+    chunkText: () => [],
+    documentDir: '/tmp/docs',
+    extractDocumentTokens: (text) => ({ cleanedText: text, documentPaths: [] }),
+    extractImageTokens: (text) => ({ cleanedText: text, imagePaths: [] }),
+    formatError: () => '',
+    imageDir: '/tmp/images',
+    isPathInside: () => true,
+    markdownToTelegramHtml: (value) => value,
+  });
+
+  const jsonResponse = JSON.stringify({ type: 'result', result: 'extracted text' });
+  await service.replyWithResponse(ctx, jsonResponse);
+
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0].text, 'extracted text');
 });
