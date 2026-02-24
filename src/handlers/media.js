@@ -1,4 +1,4 @@
-const PROCESSING_DELAY_MS = 5000;
+const PROCESSING_DELAY_MS = 10000;
 
 function registerMediaHandlers(options) {
   const {
@@ -36,7 +36,7 @@ function registerMediaHandlers(options) {
     const work = (async () => {
       const stopTyping = startTyping(ctx);
       const ackTimer = setTimeout(() => {
-        bot.telegram.sendMessage(chatId, 'Processing...', extra).catch(() => {});
+        bot.telegram.sendMessage(chatId, 'An agent is handling this task.', extra).catch(() => {});
       }, PROCESSING_DELAY_MS);
       try {
         const response = await runAgentForChat(chatId, prompt, {
