@@ -157,6 +157,8 @@ let globalAgent = AGENT_CODEX;
 let globalModels = {};
 let cronDefaultChatId = null;
 const enqueue = createEnqueue(queues);
+const agentQueues = new Map();
+const enqueueAgentWork = createEnqueue(agentQueues);
 
 const scriptManager = new ScriptManager(SCRIPTS_DIR);
 const scriptService = createScriptService({
@@ -399,6 +401,7 @@ registerHandlers({
   documentDir: DOCUMENT_DIR,
   downloadTelegramFile,
   enqueue,
+  enqueueAgentWork,
   extractMemoryText,
   formatScriptContext,
   getAudioPayload,
@@ -449,6 +452,7 @@ bootstrapApp({
     installShutdownHooks({
       bot,
       getCronScheduler: () => cronScheduler,
+      getAgentQueues: () => agentQueues,
       getPersistPromises: () => [threadsPersist, agentOverridesPersist, memoryPersist],
       getQueues: () => queues,
       shutdownDrainTimeoutMs: SHUTDOWN_DRAIN_TIMEOUT_MS,

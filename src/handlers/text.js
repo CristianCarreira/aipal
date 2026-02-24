@@ -6,6 +6,7 @@ function registerTextHandler(options) {
     captureMemoryEvent,
     consumeScriptContext,
     enqueue,
+    enqueueAgentWork,
     extractMemoryText,
     formatScriptContext,
     getTopicId,
@@ -20,6 +21,36 @@ function registerTextHandler(options) {
     sendResponseToChat,
     startTyping,
   } = options;
+
+  function dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, runOptions) {
+    enqueueAgentWork(topicKey, async () => {
+      const stopTyping = startTyping(ctx);
+      try {
+        const response = await runAgentForChat(chatId, prompt, {
+          topicId,
+          ...runOptions,
+        });
+        await captureMemoryEvent({
+          threadKey: memoryThreadKey,
+          chatId,
+          topicId,
+          agentId: effectiveAgentId,
+          role: 'assistant',
+          kind: 'text',
+          text: extractMemoryText(response),
+        });
+        await sendResponseToChat(chatId, response, { topicId });
+      } catch (err) {
+        console.error('Agent call failed:', err);
+        const errExtra = topicId ? { message_thread_id: topicId } : {};
+        await bot.telegram
+          .sendMessage(chatId, `Error: ${err.message}`, errExtra)
+          .catch(() => {});
+      } finally {
+        stopTyping();
+      }
+    });
+  }
 
   bot.on('text', (ctx) => {
     const chatId = ctx.chat.id;
@@ -81,25 +112,7 @@ function registerTextHandler(options) {
               name: slash.name,
               output,
             });
-            const stopTyping = startTyping(ctx);
-            try {
-              const response = await runAgentForChat(chatId, llmPrompt, {
-                topicId,
-                scriptContext,
-              });
-              await captureMemoryEvent({
-                threadKey: memoryThreadKey,
-                chatId,
-                topicId,
-                agentId: effectiveAgentId,
-                role: 'assistant',
-                kind: 'text',
-                text: extractMemoryText(response),
-              });
-              await sendResponseToChat(chatId, response, { topicId });
-            } finally {
-              stopTyping();
-            }
+            dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, llmPrompt, { scriptContext });
             return;
           }
           lastScriptOutputs.set(topicKey, { name: slash.name, output });
@@ -128,7 +141,6 @@ function registerTextHandler(options) {
         topicId,
         effectiveAgentId
       );
-      const stopTyping = startTyping(ctx);
       try {
         await captureMemoryEvent({
           threadKey: memoryThreadKey,
@@ -140,25 +152,10 @@ function registerTextHandler(options) {
           text,
         });
         const scriptContext = consumeScriptContext(topicKey);
-        const response = await runAgentForChat(chatId, text, {
-          topicId,
-          scriptContext,
-        });
-        await captureMemoryEvent({
-          threadKey: memoryThreadKey,
-          chatId,
-          topicId,
-          agentId: effectiveAgentId,
-          role: 'assistant',
-          kind: 'text',
-          text: extractMemoryText(response),
-        });
-        await sendResponseToChat(chatId, response, { topicId });
+        dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, text, { scriptContext });
       } catch (err) {
         console.error(err);
         await replyWithError(ctx, 'Error processing response.', err);
-      } finally {
-        stopTyping();
       }
     });
   });

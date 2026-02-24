@@ -18,8 +18,6 @@ const { createAgentRunner } = require('../src/services/agent-runner');
 const { createTelegramReplyService } = require('../src/services/telegram-reply');
 const { buildThreadKey, buildTopicKey, resolveThreadId } = require('../src/thread-store');
 
-// Prompt is now passed via env var, not embedded in command string
-
 test('e2e: text handler runs bootstrap + agent + telegram reply with thread continuity', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-e2e-'));
   const imageDir = path.join(tmp, 'images');
@@ -42,6 +40,8 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
 
   const queues = new Map();
   const enqueue = createEnqueue(queues);
+  const agentQueues = new Map();
+  const enqueueAgentWork = createEnqueue(agentQueues);
   const threadTurns = new Map();
   const threads = new Map();
   const capturedEvents = [];
@@ -78,7 +78,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
           // Ignore non-json lines.
         }
       }
-      return { threadId, text, sawJson };
+      return { text, threadId, sawJson };
     },
   };
 
@@ -139,6 +139,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     captureMemoryEvent,
     consumeScriptContext: () => '',
     enqueue,
+    enqueueAgentWork,
     extractMemoryText,
     formatScriptContext: () => '',
     getTopicId: () => undefined,
@@ -165,21 +166,29 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     const ctx = {
       chat: { id: 12345 },
       message: { text },
-      reply: async (value, options) => {},
+      reply: async () => {},
       sendChatAction: async () => {},
     };
 
     textHandler(ctx);
+    // Wait for the main queue to finish (fast — just captures user memory)
     const queueKey = buildTopicKey(ctx.chat.id, undefined);
     const queued = queues.get(queueKey);
-    assert.ok(queued);
-    await queued;
+    if (queued) await queued;
   }
 
+  // Send first message — main queue finishes fast, agent work dispatched
   await sendText('Hola equipo');
+
+  // Send second message immediately — main queue is free, accepts it
   await sendText('¿Seguimos por el mismo hilo?');
 
-  // Agent responses are sent directly via sendResponseToChat (no background tasks)
+  // Now wait for agent work to complete (serialized per topicKey)
+  const agentQueueKey = buildTopicKey(12345, undefined);
+  const agentQueued = agentQueues.get(agentQueueKey);
+  if (agentQueued) await agentQueued;
+
+  // Agent responses are sent via sendResponseToChat
   assert.equal(sentResponses.length, 2);
   assert.equal(sentResponses[0].response, 'Primera respuesta');
   assert.equal(sentResponses[1].response, 'Segunda respuesta');
@@ -196,12 +205,12 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   assert.match(secondPrompt, /\u00bfSeguimos por el mismo hilo\?/);
   assert.doesNotMatch(secondPrompt, /BOOTSTRAP\(/);
 
-  // User + assistant events are both captured in the handler now
+  // User events captured in main queue, assistant events captured in agent queue.
+  // With instant mock responses, agent work for msg 1 completes before msg 2 arrives.
   assert.equal(capturedEvents.length, 4);
-  assert.deepEqual(
-    capturedEvents.map((event) => `${event.role}:${event.kind}`),
-    ['user:text', 'assistant:text', 'user:text', 'assistant:text']
-  );
+  const roles = capturedEvents.map((event) => `${event.role}:${event.kind}`);
+  assert.equal(roles.filter((r) => r === 'user:text').length, 2);
+  assert.equal(roles.filter((r) => r === 'assistant:text').length, 2);
 
   const persistedThreadId = threads.get(buildThreadKey(12345, undefined, 'fake'));
   assert.equal(persistedThreadId, 'thread-1');
