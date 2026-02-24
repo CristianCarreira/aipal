@@ -76,8 +76,8 @@ function parseOutput(output) {
 module.exports = {
   id: 'claude',
   label: 'claude',
-  needsPty: false,
-  mergeStderr: true,
+  needsPty: true,
+  mergeStderr: false,
   buildCommand,
   parseOutput,
 };
