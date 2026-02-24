@@ -29,7 +29,7 @@ const SCRIPT_TIMEOUT_MS = readNumberEnv(
 );
 const AGENT_TIMEOUT_MS = readNumberEnv(
   process.env.AIPAL_AGENT_TIMEOUT_MS,
-  600000
+  1800000
 );
 const AGENT_MAX_BUFFER = readNumberEnv(
   process.env.AIPAL_AGENT_MAX_BUFFER,
