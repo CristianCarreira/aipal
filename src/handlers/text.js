@@ -1,6 +1,5 @@
 function registerTextHandler(options) {
   const {
-    backgroundTasks,
     bot,
     buildMemoryThreadKey,
     buildTopicKey,
@@ -18,6 +17,7 @@ function registerTextHandler(options) {
     runAgentForChat,
     runScriptCommand,
     scriptManager,
+    sendResponseToChat,
     startTyping,
   } = options;
 
@@ -81,10 +81,25 @@ function registerTextHandler(options) {
               name: slash.name,
               output,
             });
-            const task = backgroundTasks.dispatch(chatId, topicId, llmPrompt, {
-              scriptContext,
-            });
-            await ctx.reply(`Task #${task.id} started.`);
+            const stopTyping = startTyping(ctx);
+            try {
+              const response = await runAgentForChat(chatId, llmPrompt, {
+                topicId,
+                scriptContext,
+              });
+              await captureMemoryEvent({
+                threadKey: memoryThreadKey,
+                chatId,
+                topicId,
+                agentId: effectiveAgentId,
+                role: 'assistant',
+                kind: 'text',
+                text: extractMemoryText(response),
+              });
+              await sendResponseToChat(chatId, response, { topicId });
+            } finally {
+              stopTyping();
+            }
             return;
           }
           lastScriptOutputs.set(topicKey, { name: slash.name, output });
@@ -113,6 +128,7 @@ function registerTextHandler(options) {
         topicId,
         effectiveAgentId
       );
+      const stopTyping = startTyping(ctx);
       try {
         await captureMemoryEvent({
           threadKey: memoryThreadKey,
@@ -124,13 +140,25 @@ function registerTextHandler(options) {
           text,
         });
         const scriptContext = consumeScriptContext(topicKey);
-        const task = backgroundTasks.dispatch(chatId, topicId, text, {
+        const response = await runAgentForChat(chatId, text, {
+          topicId,
           scriptContext,
         });
-        await ctx.reply(`Task #${task.id} started.`);
+        await captureMemoryEvent({
+          threadKey: memoryThreadKey,
+          chatId,
+          topicId,
+          agentId: effectiveAgentId,
+          role: 'assistant',
+          kind: 'text',
+          text: extractMemoryText(response),
+        });
+        await sendResponseToChat(chatId, response, { topicId });
       } catch (err) {
         console.error(err);
         await replyWithError(ctx, 'Error processing response.', err);
+      } finally {
+        stopTyping();
       }
     });
   });

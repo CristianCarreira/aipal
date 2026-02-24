@@ -1,6 +1,5 @@
 function registerMediaHandlers(options) {
   const {
-    backgroundTasks,
     bot,
     buildMemoryThreadKey,
     buildTopicKey,
@@ -20,6 +19,7 @@ function registerMediaHandlers(options) {
     resolveEffectiveAgentId,
     runAgentForChat,
     safeUnlink,
+    sendResponseToChat,
     startTyping,
     transcribeAudio,
   } = options;
@@ -62,12 +62,19 @@ function registerMediaHandlers(options) {
           kind: 'audio',
           text,
         });
-        stopTyping();
-        const task = backgroundTasks.dispatch(chatId, topicId, text, {});
-        await ctx.reply(`Task #${task.id} started.`);
+        const response = await runAgentForChat(chatId, text, { topicId });
+        await captureMemoryEvent({
+          threadKey: memoryThreadKey,
+          chatId,
+          topicId,
+          agentId: effectiveAgentId,
+          role: 'assistant',
+          kind: 'text',
+          text: extractMemoryText(response),
+        });
+        await sendResponseToChat(chatId, response, { topicId });
       } catch (err) {
         console.error(err);
-        stopTyping();
         if (err && err.code === 'ENOENT') {
           await replyWithError(
             ctx,
@@ -78,6 +85,7 @@ function registerMediaHandlers(options) {
           await replyWithError(ctx, 'Error processing audio.', err);
         }
       } finally {
+        stopTyping();
         await safeUnlink(audioPath);
         await safeUnlink(transcriptPath);
       }
@@ -117,15 +125,25 @@ function registerMediaHandlers(options) {
           kind: 'image',
           text: prompt,
         });
-        stopTyping();
-        const task = backgroundTasks.dispatch(chatId, topicId, prompt, {
+        const response = await runAgentForChat(chatId, prompt, {
+          topicId,
           imagePaths: [imagePath],
         });
-        await ctx.reply(`Task #${task.id} started.`);
+        await captureMemoryEvent({
+          threadKey: memoryThreadKey,
+          chatId,
+          topicId,
+          agentId: effectiveAgentId,
+          role: 'assistant',
+          kind: 'text',
+          text: extractMemoryText(response),
+        });
+        await sendResponseToChat(chatId, response, { topicId });
       } catch (err) {
         console.error(err);
-        stopTyping();
         await replyWithError(ctx, 'Error processing image.', err);
+      } finally {
+        stopTyping();
       }
     });
   });
@@ -164,15 +182,25 @@ function registerMediaHandlers(options) {
           kind: 'document',
           text: prompt,
         });
-        stopTyping();
-        const task = backgroundTasks.dispatch(chatId, topicId, prompt, {
+        const response = await runAgentForChat(chatId, prompt, {
+          topicId,
           documentPaths: [documentPath],
         });
-        await ctx.reply(`Task #${task.id} started.`);
+        await captureMemoryEvent({
+          threadKey: memoryThreadKey,
+          chatId,
+          topicId,
+          agentId: effectiveAgentId,
+          role: 'assistant',
+          kind: 'text',
+          text: extractMemoryText(response),
+        });
+        await sendResponseToChat(chatId, response, { topicId });
       } catch (err) {
         console.error(err);
-        stopTyping();
         await replyWithError(ctx, 'Error processing document.', err);
+      } finally {
+        stopTyping();
       }
     });
   });
