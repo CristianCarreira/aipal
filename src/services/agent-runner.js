@@ -44,8 +44,10 @@ function createAgentRunner(options) {
     });
 
     let commandToRun = agentCmd;
+    const execEnv = { ...process.env, AIPAL_PROMPT: promptText };
     if (agent.needsPty) {
-      commandToRun = wrapCommandWithPty(commandToRun);
+      execEnv.AIPAL_CMD = commandToRun;
+      commandToRun = wrapCommandWithPty(commandToRun, 'AIPAL_CMD');
     }
     if (agent.mergeStderr) {
       commandToRun = `${commandToRun} 2>&1`;
@@ -59,7 +61,7 @@ function createAgentRunner(options) {
       output = await execLocal('bash', ['-lc', commandToRun], {
         timeout: agentTimeoutMs,
         maxBuffer: agentMaxBuffer,
-        env: { ...process.env, AIPAL_PROMPT: promptText },
+        env: execEnv,
       });
     } catch (err) {
       execError = err;
@@ -158,8 +160,14 @@ function createAgentRunner(options) {
       model: getGlobalModels()[effectiveAgentId],
     });
     let commandToRun = agentCmd;
+    const execEnv = {
+      ...process.env,
+      AIPAL_PROMPT: finalPrompt,
+      ...(threadId ? { AIPAL_THREAD_ID: threadId } : {}),
+    };
     if (agent.needsPty) {
-      commandToRun = wrapCommandWithPty(commandToRun);
+      execEnv.AIPAL_CMD = commandToRun;
+      commandToRun = wrapCommandWithPty(commandToRun, 'AIPAL_CMD');
     }
     if (agent.mergeStderr) {
       commandToRun = `${commandToRun} 2>&1`;
@@ -175,11 +183,7 @@ function createAgentRunner(options) {
       output = await execLocal('bash', ['-lc', commandToRun], {
         timeout: agentTimeoutMs,
         maxBuffer: agentMaxBuffer,
-        env: {
-          ...process.env,
-          AIPAL_PROMPT: finalPrompt,
-          ...(threadId ? { AIPAL_THREAD_ID: threadId } : {}),
-        },
+        env: execEnv,
       });
     } catch (err) {
       execError = err;
