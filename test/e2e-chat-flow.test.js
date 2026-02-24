@@ -18,11 +18,7 @@ const { createAgentRunner } = require('../src/services/agent-runner');
 const { createTelegramReplyService } = require('../src/services/telegram-reply');
 const { buildThreadKey, buildTopicKey, resolveThreadId } = require('../src/thread-store');
 
-function decodePromptFromCommand(command) {
-  const match = command.match(/PROMPT_B64='([^']+)'/);
-  if (!match) return '';
-  return Buffer.from(match[1], 'base64').toString('utf8');
-}
+// Prompt is now passed via env var, not embedded in command string
 
 test('e2e: text handler runs bootstrap + agent + telegram reply with thread continuity', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-e2e-'));
@@ -44,6 +40,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   const threads = new Map();
   const capturedEvents = [];
   const commandHistory = [];
+  const promptHistory = [];
   const buildCalls = [];
   const replies = [];
 
@@ -86,9 +83,10 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     buildMemoryRetrievalContext: async () => 'MEMORY_CONTEXT',
     buildPrompt,
     documentDir,
-    execLocal: async (_cmd, args) => {
+    execLocal: async (_cmd, args, options) => {
       const command = args[1];
       commandHistory.push(command);
+      promptHistory.push((options && options.env && options.env.PROMPT) || '');
       if (command.includes('--thread new')) {
         return [
           JSON.stringify({ type: 'thread.started', thread_id: 'thread-1' }),
@@ -117,7 +115,6 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     prefixTextWithTimestamp: (value) => value,
     resolveEffectiveAgentId: () => 'fake',
     resolveThreadId,
-    shellQuote: (value) => `'${String(value).replace(/'/g, String.raw`'\\''`)}'`,
     threadTurns,
     wrapCommandWithPty: (value) => value,
     defaultTimeZone: 'UTC',
@@ -192,8 +189,8 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   assert.equal(buildCalls[0].threadId, undefined);
   assert.equal(buildCalls[1].threadId, 'thread-1');
 
-  const firstPrompt = decodePromptFromCommand(commandHistory[0]);
-  const secondPrompt = decodePromptFromCommand(commandHistory[1]);
+  const firstPrompt = promptHistory[0];
+  const secondPrompt = promptHistory[1];
   assert.match(firstPrompt, /BOOTSTRAP\(12345:root:fake\)/);
   assert.match(firstPrompt, /MEMORY_CONTEXT/);
   assert.match(firstPrompt, /Hola equipo/);

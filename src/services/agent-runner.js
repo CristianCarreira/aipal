@@ -20,7 +20,6 @@ function createAgentRunner(options) {
     prefixTextWithTimestamp,
     resolveEffectiveAgentId,
     resolveThreadId,
-    shellQuote,
     threadTurns,
     wrapCommandWithPty,
     defaultTimeZone,
@@ -44,12 +43,7 @@ function createAgentRunner(options) {
       thinking,
     });
 
-    const command = [
-      `PROMPT=${shellQuote(promptText)};`,
-      `${agentCmd}`,
-    ].join(' ');
-
-    let commandToRun = command;
+    let commandToRun = agentCmd;
     if (agent.needsPty) {
       commandToRun = wrapCommandWithPty(commandToRun);
     }
@@ -65,6 +59,7 @@ function createAgentRunner(options) {
       output = await execLocal('bash', ['-lc', commandToRun], {
         timeout: agentTimeoutMs,
         maxBuffer: agentMaxBuffer,
+        env: { ...process.env, PROMPT: promptText },
       });
     } catch (err) {
       execError = err;
@@ -160,11 +155,7 @@ function createAgentRunner(options) {
       thinking,
       model: getGlobalModels()[effectiveAgentId],
     });
-    const command = [
-      `PROMPT=${shellQuote(finalPrompt)};`,
-      `${agentCmd}`,
-    ].join(' ');
-    let commandToRun = command;
+    let commandToRun = agentCmd;
     if (agent.needsPty) {
       commandToRun = wrapCommandWithPty(commandToRun);
     }
@@ -182,6 +173,7 @@ function createAgentRunner(options) {
       output = await execLocal('bash', ['-lc', commandToRun], {
         timeout: agentTimeoutMs,
         maxBuffer: agentMaxBuffer,
+        env: { ...process.env, PROMPT: finalPrompt },
       });
     } catch (err) {
       execError = err;
