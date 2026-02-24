@@ -13,7 +13,6 @@ function registerMediaHandlers(options) {
     getTopicId,
     imageDir,
     enqueue,
-    enqueueAgentWork,
     replyWithError,
     replyWithResponse,
     replyWithTranscript,
@@ -22,11 +21,15 @@ function registerMediaHandlers(options) {
     safeUnlink,
     sendResponseToChat,
     startTyping,
+    trackAgentWork,
     transcribeAudio,
   } = options;
 
-  function dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, runOptions) {
-    enqueueAgentWork(topicKey, async () => {
+  function dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, runOptions) {
+    const extra = topicId ? { message_thread_id: topicId } : {};
+    bot.telegram.sendMessage(chatId, 'Processing...', extra).catch(() => {});
+
+    const work = (async () => {
       const stopTyping = startTyping(ctx);
       try {
         const response = await runAgentForChat(chatId, prompt, {
@@ -45,14 +48,14 @@ function registerMediaHandlers(options) {
         await sendResponseToChat(chatId, response, { topicId });
       } catch (err) {
         console.error('Agent call failed:', err);
-        const errExtra = topicId ? { message_thread_id: topicId } : {};
         await bot.telegram
-          .sendMessage(chatId, `Error: ${err.message}`, errExtra)
+          .sendMessage(chatId, `Error: ${err.message}`, extra)
           .catch(() => {});
       } finally {
         stopTyping();
       }
-    });
+    })();
+    trackAgentWork(work);
   }
 
   bot.on(['voice', 'audio', 'document'], (ctx, next) => {
@@ -94,7 +97,7 @@ function registerMediaHandlers(options) {
           text,
         });
         stopTyping();
-        dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, text, {});
+        dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, text, {});
       } catch (err) {
         console.error(err);
         stopTyping();
@@ -148,7 +151,7 @@ function registerMediaHandlers(options) {
           text: prompt,
         });
         stopTyping();
-        dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, { imagePaths: [imagePath] });
+        dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, { imagePaths: [imagePath] });
       } catch (err) {
         console.error(err);
         stopTyping();
@@ -192,7 +195,7 @@ function registerMediaHandlers(options) {
           text: prompt,
         });
         stopTyping();
-        dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, { documentPaths: [documentPath] });
+        dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, { documentPaths: [documentPath] });
       } catch (err) {
         console.error(err);
         stopTyping();

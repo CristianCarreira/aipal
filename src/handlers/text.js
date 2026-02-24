@@ -6,7 +6,6 @@ function registerTextHandler(options) {
     captureMemoryEvent,
     consumeScriptContext,
     enqueue,
-    enqueueAgentWork,
     extractMemoryText,
     formatScriptContext,
     getTopicId,
@@ -20,10 +19,14 @@ function registerTextHandler(options) {
     scriptManager,
     sendResponseToChat,
     startTyping,
+    trackAgentWork,
   } = options;
 
-  function dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, runOptions) {
-    enqueueAgentWork(topicKey, async () => {
+  function dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, prompt, runOptions) {
+    const extra = topicId ? { message_thread_id: topicId } : {};
+    bot.telegram.sendMessage(chatId, 'Processing...', extra).catch(() => {});
+
+    const work = (async () => {
       const stopTyping = startTyping(ctx);
       try {
         const response = await runAgentForChat(chatId, prompt, {
@@ -42,14 +45,14 @@ function registerTextHandler(options) {
         await sendResponseToChat(chatId, response, { topicId });
       } catch (err) {
         console.error('Agent call failed:', err);
-        const errExtra = topicId ? { message_thread_id: topicId } : {};
         await bot.telegram
-          .sendMessage(chatId, `Error: ${err.message}`, errExtra)
+          .sendMessage(chatId, `Error: ${err.message}`, extra)
           .catch(() => {});
       } finally {
         stopTyping();
       }
-    });
+    })();
+    trackAgentWork(work);
   }
 
   bot.on('text', (ctx) => {
@@ -112,7 +115,7 @@ function registerTextHandler(options) {
               name: slash.name,
               output,
             });
-            dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, llmPrompt, { scriptContext });
+            dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, llmPrompt, { scriptContext });
             return;
           }
           lastScriptOutputs.set(topicKey, { name: slash.name, output });
@@ -152,7 +155,7 @@ function registerTextHandler(options) {
           text,
         });
         const scriptContext = consumeScriptContext(topicKey);
-        dispatchAgentWork(topicKey, ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, text, { scriptContext });
+        dispatchAgentWork(ctx, chatId, topicId, memoryThreadKey, effectiveAgentId, text, { scriptContext });
       } catch (err) {
         console.error(err);
         await replyWithError(ctx, 'Error processing response.', err);

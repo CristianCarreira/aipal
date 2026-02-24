@@ -51,7 +51,7 @@ function initializeApp(options) {
 function installShutdownHooks(options) {
   const {
     bot,
-    getAgentQueues,
+    getPendingAgentWork,
     getCronScheduler,
     getPersistPromises,
     getQueues,
@@ -90,7 +90,7 @@ function installShutdownHooks(options) {
       .then(async () => {
         const pending = [
           ...Array.from(getQueues().values()),
-          ...Array.from(getAgentQueues().values()),
+          ...Array.from(getPendingAgentWork()),
         ];
         if (pending.length > 0) {
           console.info(`Waiting for ${pending.length} queued job(s) to finish...`);

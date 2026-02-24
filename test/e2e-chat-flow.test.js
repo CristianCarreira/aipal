@@ -32,7 +32,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     },
     telegram: {
       sendChatAction: async () => {},
-      sendMessage: async () => {},
+      sendMessage: async (_chatId, text) => { ackMessages.push(text); },
       sendPhoto: async () => {},
       sendDocument: async () => {},
     },
@@ -40,8 +40,10 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
 
   const queues = new Map();
   const enqueue = createEnqueue(queues);
-  const agentQueues = new Map();
-  const enqueueAgentWork = createEnqueue(agentQueues);
+  const agentWorkPromises = [];
+  function trackAgentWork(work) {
+    agentWorkPromises.push(work);
+  }
   const threadTurns = new Map();
   const threads = new Map();
   const capturedEvents = [];
@@ -49,6 +51,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   const promptHistory = [];
   const buildCalls = [];
   const sentResponses = [];
+  const ackMessages = [];
 
   const agent = {
     id: 'fake',
@@ -139,7 +142,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
     captureMemoryEvent,
     consumeScriptContext: () => '',
     enqueue,
-    enqueueAgentWork,
+    trackAgentWork,
     extractMemoryText,
     formatScriptContext: () => '',
     getTopicId: () => undefined,
@@ -183,10 +186,8 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   // Send second message immediately — main queue is free, accepts it
   await sendText('¿Seguimos por el mismo hilo?');
 
-  // Now wait for agent work to complete (serialized per topicKey)
-  const agentQueueKey = buildTopicKey(12345, undefined);
-  const agentQueued = agentQueues.get(agentQueueKey);
-  if (agentQueued) await agentQueued;
+  // Now wait for all agent work to complete (runs in parallel)
+  await Promise.all(agentWorkPromises);
 
   // Agent responses are sent via sendResponseToChat
   assert.equal(sentResponses.length, 2);
