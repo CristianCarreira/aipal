@@ -19,7 +19,7 @@ function stripAnsi(value) {
     .replace(/\x1B[@-Z\\-_]/g, '');
 }
 
-function buildCommand({ prompt, promptExpression, threadId }) {
+function buildCommand({ prompt, promptExpression, threadId, threadIdExpression }) {
   const promptValue = resolvePromptValue(prompt, promptExpression);
   const args = [
     '-p',
@@ -29,7 +29,7 @@ function buildCommand({ prompt, promptExpression, threadId }) {
     '--dangerously-skip-permissions',
   ];
   if (threadId) {
-    args.push('--resume', threadId);
+    args.push('--resume', threadIdExpression || threadId);
   }
   return `${CLAUDE_CMD} ${args.join(' ')}`.trim();
 }

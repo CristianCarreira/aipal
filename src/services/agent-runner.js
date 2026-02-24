@@ -148,10 +148,12 @@ function createAgentRunner(options) {
       { includeFileInstructions: shouldIncludeFileInstructions }
     );
     const promptExpression = '"$AIPAL_PROMPT"';
+    const threadIdExpression = threadId ? '"$AIPAL_THREAD_ID"' : undefined;
     const agentCmd = agent.buildCommand({
       prompt: finalPrompt,
       promptExpression,
       threadId,
+      threadIdExpression,
       thinking,
       model: getGlobalModels()[effectiveAgentId],
     });
@@ -173,7 +175,11 @@ function createAgentRunner(options) {
       output = await execLocal('bash', ['-lc', commandToRun], {
         timeout: agentTimeoutMs,
         maxBuffer: agentMaxBuffer,
-        env: { ...process.env, AIPAL_PROMPT: finalPrompt },
+        env: {
+          ...process.env,
+          AIPAL_PROMPT: finalPrompt,
+          ...(threadId ? { AIPAL_THREAD_ID: threadId } : {}),
+        },
       });
     } catch (err) {
       execError = err;
