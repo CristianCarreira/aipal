@@ -145,11 +145,27 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
     }
   }
 
+  function isBudgetExhausted() {
+    if (budgetDaily <= 0) return false;
+    ensureToday();
+    const totalTokens = getTotalTokens();
+    return totalTokens >= budgetDaily;
+  }
+
+  function getBudgetPct() {
+    if (budgetDaily <= 0) return null;
+    ensureToday();
+    const totalTokens = getTotalTokens();
+    return Math.round((totalTokens / budgetDaily) * 1000) / 10;
+  }
+
   return {
     trackUsage,
     getUsageStats,
     resetUsage,
     hydrate,
+    isBudgetExhausted,
+    getBudgetPct,
   };
 }
 

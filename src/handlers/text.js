@@ -24,6 +24,7 @@ function registerTextHandler(options) {
     scriptManager,
     sendResponseToChat,
     startTyping,
+    isBudgetExhausted,
     trackAgentWork,
   } = options;
 
@@ -123,6 +124,15 @@ function registerTextHandler(options) {
               ? scriptMeta.llm.prompt.trim()
               : '';
           if (llmPrompt) {
+            if (isBudgetExhausted && isBudgetExhausted()) {
+              const extra = topicId ? { message_thread_id: topicId } : {};
+              await bot.telegram.sendMessage(
+                chatId,
+                'Daily token budget exhausted. Use /usage for details.',
+                extra
+              ).catch(() => {});
+              return;
+            }
             const scriptContext = formatScriptContext({
               name: slash.name,
               output,
@@ -150,6 +160,15 @@ function registerTextHandler(options) {
     }
 
     enqueue(topicKey, async () => {
+      if (isBudgetExhausted && isBudgetExhausted()) {
+        const extra = topicId ? { message_thread_id: topicId } : {};
+        await bot.telegram.sendMessage(
+          chatId,
+          'Daily token budget exhausted. Messages will resume tomorrow. Use /usage for details.',
+          extra
+        ).catch(() => {});
+        return;
+      }
       const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
       const memoryThreadKey = buildMemoryThreadKey(
         chatId,

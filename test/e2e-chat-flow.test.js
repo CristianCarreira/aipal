@@ -870,3 +870,108 @@ test('extractMemoryText truncates to memoryCaptureMaxChars', () => {
   assert.ok(truncated.length <= 100, `Truncated to 100 chars (got ${truncated.length})`);
   assert.ok(truncated.endsWith('\u2026'), 'Truncated text ends with ellipsis');
 });
+
+test('text handler blocks messages when budget is exhausted', async () => {
+  const bot = {
+    handlers: new Map(),
+    on(event, handler) { this.handlers.set(event, handler); },
+    telegram: {
+      sendChatAction: async () => {},
+      sendMessage: async (_chatId, text) => { sentMessages.push(text); },
+    },
+  };
+  const sentMessages = [];
+  const queues = new Map();
+  const enqueue = createEnqueue(queues);
+
+  registerTextHandler({
+    addActiveTask: () => ({ startTime: Date.now() }),
+    bot,
+    buildMemoryThreadKey: () => 'key',
+    buildTopicKey,
+    captureMemoryEvent: async () => {},
+    consumeScriptContext: () => undefined,
+    enqueue,
+    extractMemoryText: (v) => String(v || ''),
+    formatScriptContext: () => '',
+    getActiveTasksSummary: () => '',
+    getTopicId: () => undefined,
+    isBudgetExhausted: () => true,
+    lastScriptOutputs: new Map(),
+    parseSlashCommand,
+    replyWithError: async () => {},
+    replyWithResponse: async () => {},
+    removeActiveTask: () => {},
+    resolveEffectiveAgentId: () => 'fake',
+    runAgentForChat: async () => { throw new Error('Should not be called'); },
+    runScriptCommand: async () => 'ok',
+    scriptManager: { getScriptMetadata: async () => ({}) },
+    sendResponseToChat: async () => {},
+    startTyping: () => () => {},
+    trackAgentWork: () => {},
+  });
+
+  const handler = bot.handlers.get('text');
+  assert.ok(handler, 'text handler registered');
+
+  await handler({
+    chat: { id: 12345 },
+    message: { text: 'Hello' },
+  });
+
+  // Wait for enqueue to process
+  await new Promise((r) => setTimeout(r, 50));
+
+  assert.ok(sentMessages.length > 0, 'Should send a budget exhausted message');
+  assert.ok(sentMessages[0].includes('budget'), 'Message mentions budget');
+});
+
+test('cron handler skips jobs when budget gate exceeded', async () => {
+  const { createCronHandler } = require('../src/services/cron-handler');
+  let agentCalled = false;
+
+  const handler = createCronHandler({
+    bot: {
+      telegram: {
+        sendChatAction: async () => {},
+        sendMessage: async () => {},
+      },
+    },
+    buildMemoryThreadKey: () => 'key',
+    captureMemoryEvent: async () => {},
+    cronBudgetGatePct: 90,
+    extractMemoryText: (v) => String(v || ''),
+    getBudgetPct: () => 95,
+    resolveEffectiveAgentId: () => 'fake',
+    runAgentForChat: async () => { agentCalled = true; return 'ok'; },
+    sendResponseToChat: async () => {},
+  });
+
+  await handler(12345, 'test prompt', { jobId: 'test-job' });
+  assert.equal(agentCalled, false, 'Agent should not be called when budget gate exceeded');
+});
+
+test('cron handler runs jobs when under budget gate', async () => {
+  const { createCronHandler } = require('../src/services/cron-handler');
+  let agentCalled = false;
+
+  const handler = createCronHandler({
+    bot: {
+      telegram: {
+        sendChatAction: async () => {},
+        sendMessage: async () => {},
+      },
+    },
+    buildMemoryThreadKey: () => 'key',
+    captureMemoryEvent: async () => {},
+    cronBudgetGatePct: 90,
+    extractMemoryText: (v) => String(v || ''),
+    getBudgetPct: () => 50,
+    resolveEffectiveAgentId: () => 'fake',
+    runAgentForChat: async () => { agentCalled = true; return 'HEARTBEAT_OK'; },
+    sendResponseToChat: async () => {},
+  });
+
+  await handler(12345, 'test prompt', { jobId: 'test-job' });
+  assert.equal(agentCalled, true, 'Agent should be called when under budget gate');
+});

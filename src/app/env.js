@@ -63,6 +63,10 @@ const TOKEN_BUDGET_DAILY = readNumberEnv(
   process.env.AIPAL_TOKEN_BUDGET_DAILY,
   0  // 0 = no limit, tracking only
 );
+const CRON_BUDGET_GATE_PCT = readNumberEnv(
+  process.env.AIPAL_CRON_BUDGET_GATE_PCT,
+  90
+);
 const SHUTDOWN_DRAIN_TIMEOUT_MS = readNumberEnv(
   process.env.AIPAL_SHUTDOWN_DRAIN_TIMEOUT_MS,
   120000
@@ -71,6 +75,7 @@ const SCRIPT_NAME_REGEX = /^[A-Za-z0-9_-]+$/;
 
 module.exports = {
   AGENT_MAX_BUFFER,
+  CRON_BUDGET_GATE_PCT,
   MEMORY_CAPTURE_MAX_CHARS,
   TOKEN_BUDGET_DAILY,
   AGENT_TIMEOUT_MS,

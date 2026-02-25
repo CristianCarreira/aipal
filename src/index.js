@@ -85,6 +85,7 @@ const { installLogTimestamps } = require('./app/logging');
 const {
   AGENT_MAX_BUFFER,
   AGENT_TIMEOUT_MS,
+  CRON_BUDGET_GATE_PCT,
   DOCUMENT_CLEANUP_INTERVAL_MS,
   DOCUMENT_DIR,
   DOCUMENT_TTL_HOURS,
@@ -195,10 +196,10 @@ const USAGE_PATH = require('path').join(CONFIG_DIR, 'usage.json');
 const tokenTracker = createTokenTracker({
   budgetDaily: TOKEN_BUDGET_DAILY,
   sendAlert: async ({ chatId, threshold, pct, totalTokens, budgetDaily: budget }) => {
-    const numChatId = Number(chatId);
-    if (!Number.isFinite(numChatId)) return;
+    const alertChatId = Number(cronDefaultChatId || chatId);
+    if (!Number.isFinite(alertChatId)) return;
     await bot.telegram.sendMessage(
-      numChatId,
+      alertChatId,
       `\u26a0\ufe0f Token usage alert: ${pct}% of daily budget (${totalTokens.toLocaleString('en-US')} / ${budget.toLocaleString('en-US')} tokens) — threshold ${threshold}%`
     );
   },
@@ -334,7 +335,9 @@ const handleCronTrigger = createCronHandler({
   bot,
   buildMemoryThreadKey,
   captureMemoryEvent,
+  cronBudgetGatePct: CRON_BUDGET_GATE_PCT,
   extractMemoryText,
+  getBudgetPct: () => tokenTracker.getBudgetPct(),
   resolveEffectiveAgentId,
   runAgentForChat,
   sendResponseToChat,
@@ -475,6 +478,7 @@ registerHandlers({
   getDocumentPayload,
   getImagePayload,
   getTopicId,
+  isBudgetExhausted: () => tokenTracker.isBudgetExhausted(),
   imageDir: IMAGE_DIR,
   lastScriptOutputs,
   parseSlashCommand,

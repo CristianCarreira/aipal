@@ -131,8 +131,16 @@ Input tokens are tracked **immediately** when the agent starts (before the CLI r
 
 Token estimation accounts for **accumulated thread context**: when resuming an existing thread, the CLI re-sends the full conversation history to the API, so each turn's input cost includes all prior prompts and responses — not just the new message. Thread rotation resets the accumulation.
 
+### Budget enforcement
+When `AIPAL_TOKEN_BUDGET_DAILY` is set and the budget is exceeded (100%), the bot **blocks new messages** with a notice ("Daily token budget exhausted") until the next day. Commands like `/usage`, `/help`, `/status` still work.
+
+Cron jobs are gated earlier: by default they stop executing at **90%** of the daily budget (configurable via `AIPAL_CRON_BUDGET_GATE_PCT`). This prevents a single cron run from pushing consumption over the limit.
+
+Alerts are sent to the `cronChatId` (or the triggering chat if no `cronChatId` is configured), so you always see them in your main conversation.
+
 ### Environment knobs
-- `AIPAL_TOKEN_BUDGET_DAILY`: daily token budget. `0` = no limit (default), only tracks usage. When set to a positive number, the bot sends proactive Telegram alerts when consumption crosses the following thresholds: **25%, 50%, 75%, 85%, 95%**. Each alert is sent only once per day.
+- `AIPAL_TOKEN_BUDGET_DAILY`: daily token budget. `0` = no limit (default), only tracks usage. When set to a positive number, the bot sends proactive Telegram alerts when consumption crosses the following thresholds: **25%, 50%, 75%, 85%, 95%**. Each alert is sent only once per day. At 100%, new messages are blocked.
+- `AIPAL_CRON_BUDGET_GATE_PCT`: skip cron jobs when usage exceeds this percentage of the daily budget. Default: `90`. Only effective when `AIPAL_TOKEN_BUDGET_DAILY` is set.
 
 ### Persistence
 Usage data is stored in:

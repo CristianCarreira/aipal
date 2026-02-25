@@ -237,6 +237,41 @@ test('two-phase tracking counts messages only on input phase', async () => {
   assert.equal(stats.sources.chat.messages, 1);
 });
 
+test('isBudgetExhausted returns true when budget exceeded', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 1000 });
+
+  assert.equal(tracker.isBudgetExhausted(), false);
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 500, outputTokens: 499 });
+  assert.equal(tracker.isBudgetExhausted(), false);
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 1, outputTokens: 0 });
+  assert.equal(tracker.isBudgetExhausted(), true);
+});
+
+test('isBudgetExhausted returns false when no budget', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 999999, outputTokens: 999999 });
+  assert.equal(tracker.isBudgetExhausted(), false);
+});
+
+test('getBudgetPct returns current percentage', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 1000 });
+
+  assert.equal(tracker.getBudgetPct(), 0);
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 250, outputTokens: 0 });
+  assert.equal(tracker.getBudgetPct(), 25);
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 250, outputTokens: 0 });
+  assert.equal(tracker.getBudgetPct(), 50);
+});
+
+test('getBudgetPct returns null when no budget', () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+  assert.equal(tracker.getBudgetPct(), null);
+});
+
 test('hydrate loads sources from saved state', async () => {
   const today = new Date().toISOString().slice(0, 10);
   const savedState = {

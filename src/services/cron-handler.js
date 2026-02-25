@@ -3,7 +3,9 @@ function createCronHandler(options) {
     bot,
     buildMemoryThreadKey,
     captureMemoryEvent,
+    cronBudgetGatePct,
     extractMemoryText,
+    getBudgetPct,
     resolveEffectiveAgentId,
     runAgentForChat,
     sendResponseToChat,
@@ -11,6 +13,15 @@ function createCronHandler(options) {
 
   return async function handleCronTrigger(chatId, prompt, triggerOptions = {}) {
     const { jobId, agent, topicId } = triggerOptions;
+    if (cronBudgetGatePct > 0 && getBudgetPct) {
+      const pct = getBudgetPct();
+      if (pct !== null && pct >= cronBudgetGatePct) {
+        console.warn(
+          `Cron job ${jobId} skipped: budget at ${pct}% (gate: ${cronBudgetGatePct}%)`
+        );
+        return;
+      }
+    }
     const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId, agent);
     const memoryThreadKey = buildMemoryThreadKey(chatId, topicId, effectiveAgentId);
     console.info(
