@@ -65,7 +65,8 @@ Curated memory state is stored in:
 
 Environment knobs:
 - `AIPAL_MEMORY_CURATE_EVERY`: auto-curate memory after N new captured events (default: `20`).
-- `AIPAL_MEMORY_RETRIEVAL_LIMIT`: maximum number of retrieved memory lines injected per request (default: `8`).
+- `AIPAL_MEMORY_RETRIEVAL_LIMIT`: maximum number of retrieved memory lines injected per request (default: `5`).
+- `AIPAL_THREAD_ROTATION_TURNS`: rotate (reset) the agent thread after N turns to limit accumulated context. `0` = disabled (default). Recommended: `20`-`30` for long conversations. When the thread rotates, the bot re-injects bootstrap context (soul, tools, memory) so the agent stays informed.
 
 Retrieval currently mixes scopes (`same-thread`, `same-topic`, `same-chat`, `global`) so prompts can include both local continuity and useful cross-topic memory when available.
 
@@ -106,3 +107,29 @@ Schema:
 Notes:
 - Jobs are only scheduled when `cronChatId` is set in `config.json`.
 - Use `/cron reload` after editing `cron.json` to apply changes without restarting the bot.
+
+## Token usage tracking
+
+The bot estimates token consumption for every agent interaction (~4 chars/token) and tracks daily totals.
+
+### `/usage` command
+Shows estimated token consumption for the current day:
+```
+Token usage (2025-06-15):
+  Estimated: 12,450 tokens (input: 8,200 / output: 4,250)
+  Messages: 23
+  Budget: 12,450 / 100,000 (12.5%)
+  ████░░░░░░ 12.5%
+```
+
+If no budget is configured, the budget line and progress bar are omitted.
+
+### Environment knobs
+- `AIPAL_TOKEN_BUDGET_DAILY`: daily token budget. `0` = no limit (default), only tracks usage. When set to a positive number, the bot sends proactive Telegram alerts when consumption crosses the following thresholds: **25%, 50%, 75%, 85%, 95%**. Each alert is sent only once per day.
+
+### Persistence
+Usage data is stored in:
+- `~/.config/aipal/usage.json`
+- If `XDG_CONFIG_HOME` is set, it uses `$XDG_CONFIG_HOME/aipal/usage.json`
+
+The file resets automatically when the day changes.

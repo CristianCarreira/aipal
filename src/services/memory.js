@@ -60,33 +60,26 @@ function createMemoryService(options) {
     const soul = await readSoul();
     const tools = await readTools();
     const memory = await readMemory();
-    const lines = [
-      'Bootstrap config:',
-      `Config JSON: ${configPath}`,
-      `Soul file: ${soulPath}`,
-      `Tools file: ${toolsPath}`,
-      `Memory file: ${memoryPath}`,
-    ];
+    const lines = [];
     if (soul.exists && soul.content) {
-      lines.push('Soul (soul.md):');
+      lines.push('[SOUL]');
       lines.push(soul.content);
-      lines.push('End of soul.');
+      lines.push('[/SOUL]');
     }
     if (tools.exists && tools.content) {
-      lines.push('Tools (tools.md):');
+      lines.push('[TOOLS]');
       lines.push(tools.content);
-      lines.push('End of tools.');
+      lines.push('[/TOOLS]');
     }
     if (memory.exists && memory.content) {
-      lines.push('Memory (memory.md):');
+      lines.push('[MEMORY]');
       lines.push(memory.content);
-      lines.push('End of memory.');
+      lines.push('[/MEMORY]');
     }
     if (threadKey) {
       const threadBootstrap = await buildThreadBootstrap(threadKey);
       if (threadBootstrap) {
         lines.push(threadBootstrap);
-        lines.push('End of thread memory.');
       }
     }
     return lines.join('\n');

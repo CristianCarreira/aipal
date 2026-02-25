@@ -20,9 +20,11 @@ function createAgentRunner(options) {
     prefixTextWithTimestamp,
     resolveEffectiveAgentId,
     resolveThreadId,
+    threadRotationTurns,
     threadTurns,
     wrapCommandWithPty,
     defaultTimeZone,
+    onTokenUsage,
   } = options;
 
   async function runAgentOneShot(prompt) {
@@ -84,6 +86,11 @@ function createAgentRunner(options) {
         `Agent one-shot exited non-zero; returning stdout (code=${execError.code || 'unknown'})`
       );
     }
+    if (onTokenUsage) {
+      const inputTokens = Math.ceil(promptText.length / 4);
+      const outputTokens = Math.ceil((parsed.text || output || '').length / 4);
+      onTokenUsage({ chatId: 'oneshot', inputTokens, outputTokens });
+    }
     return parsed.text || output;
   }
 
@@ -98,7 +105,7 @@ function createAgentRunner(options) {
     const agent = getAgent(effectiveAgentId);
 
     const threads = getThreads();
-    const { threadKey, threadId, migrated } = resolveThreadId(
+    let { threadKey, threadId, migrated } = resolveThreadId(
       threads,
       chatId,
       topicId,
@@ -106,6 +113,19 @@ function createAgentRunner(options) {
     );
     const turnCount = (threadTurns.get(threadKey) || 0) + 1;
     threadTurns.set(threadKey, turnCount);
+
+    if (threadRotationTurns > 0 && threadId && turnCount >= threadRotationTurns) {
+      console.info(
+        `Thread rotation: resetting thread chat=${chatId} topic=${topicId || 'root'} turns=${turnCount}`
+      );
+      threads.delete(threadKey);
+      threadTurns.set(threadKey, 1);
+      threadId = undefined;
+      persistThreads().catch((err) =>
+        console.warn('Failed to persist threads after rotation:', err)
+      );
+    }
+
     const shouldIncludeFileInstructions =
       !threadId || turnCount % fileInstructionsEvery === 0;
     if (migrated) {
@@ -126,17 +146,19 @@ function createAgentRunner(options) {
         ? `${bootstrap}\n\n${promptWithContext}`
         : bootstrap;
     }
-    const retrievalContext = await buildMemoryRetrievalContext({
-      query: prompt,
-      chatId,
-      topicId,
-      agentId: effectiveAgentId,
-      limit: memoryRetrievalLimit,
-    });
-    if (retrievalContext) {
-      promptWithContext = promptWithContext
-        ? `${promptWithContext}\n\n${retrievalContext}`
-        : retrievalContext;
+    if (prompt.trim().length >= 6) {
+      const retrievalContext = await buildMemoryRetrievalContext({
+        query: prompt,
+        chatId,
+        topicId,
+        agentId: effectiveAgentId,
+        limit: memoryRetrievalLimit,
+      });
+      if (retrievalContext) {
+        promptWithContext = promptWithContext
+          ? `${promptWithContext}\n\n${retrievalContext}`
+          : retrievalContext;
+      }
     }
 
     const thinking = getGlobalThinking();
@@ -236,6 +258,11 @@ function createAgentRunner(options) {
       persistThreads().catch((err) =>
         console.warn('Failed to persist threads:', err)
       );
+    }
+    if (onTokenUsage) {
+      const inputTokens = Math.ceil(finalPrompt.length / 4);
+      const outputTokens = Math.ceil((parsed.text || output || '').length / 4);
+      onTokenUsage({ chatId, topicId, inputTokens, outputTokens });
     }
     return parsed.text || output;
   }

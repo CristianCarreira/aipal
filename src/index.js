@@ -9,6 +9,7 @@ const {
   normalizeAgent,
 } = require('./agents');
 const {
+  CONFIG_DIR,
   CONFIG_PATH,
   MEMORY_PATH,
   SOUL_PATH,
@@ -93,6 +94,8 @@ const {
   IMAGE_TTL_HOURS,
   MEMORY_CURATE_EVERY,
   MEMORY_RETRIEVAL_LIMIT,
+  THREAD_ROTATION_TURNS,
+  TOKEN_BUDGET_DAILY,
   SCRIPT_NAME_REGEX,
   SCRIPTS_DIR,
   SCRIPT_TIMEOUT_MS,
@@ -113,6 +116,7 @@ const { createScriptService } = require('./services/scripts');
 const { createTelegramReplyService } = require('./services/telegram-reply');
 const { bootstrapApp } = require('./app/bootstrap');
 const { initializeApp, installShutdownHooks } = require('./app/lifecycle');
+const { createTokenTracker } = require('./token-tracker');
 const { registerCommands } = require('./app/register-commands');
 const { registerHandlers } = require('./app/register-handlers');
 
@@ -184,6 +188,34 @@ function getActiveTasksSummary(chatId) {
   });
   return `[Active tasks in this conversation:\n${lines.join('\n')}]`;
 }
+
+const USAGE_PATH = require('path').join(CONFIG_DIR, 'usage.json');
+const tokenTracker = createTokenTracker({
+  budgetDaily: TOKEN_BUDGET_DAILY,
+  sendAlert: async ({ chatId, threshold, pct, totalTokens, budgetDaily: budget }) => {
+    const numChatId = Number(chatId);
+    if (!Number.isFinite(numChatId)) return;
+    await bot.telegram.sendMessage(
+      numChatId,
+      `\u26a0\ufe0f Token usage alert: ${pct}% of daily budget (${totalTokens.toLocaleString('en-US')} / ${budget.toLocaleString('en-US')} tokens) — threshold ${threshold}%`
+    );
+  },
+  persistUsage: async (state) => {
+    const fs = require('fs/promises');
+    await fs.mkdir(require('path').dirname(USAGE_PATH), { recursive: true });
+    await fs.writeFile(USAGE_PATH, JSON.stringify(state, null, 2), 'utf8');
+  },
+  loadUsage: async () => {
+    const fs = require('fs/promises');
+    try {
+      const raw = await fs.readFile(USAGE_PATH, 'utf8');
+      return JSON.parse(raw);
+    } catch (err) {
+      if (err && err.code === 'ENOENT') return null;
+      throw err;
+    }
+  },
+});
 
 const scriptManager = new ScriptManager(SCRIPTS_DIR);
 const scriptService = createScriptService({
@@ -261,11 +293,13 @@ const agentRunner = createAgentRunner({
   getThreads: () => threads,
   imageDir: IMAGE_DIR,
   memoryRetrievalLimit: MEMORY_RETRIEVAL_LIMIT,
+  onTokenUsage: (usage) => tokenTracker.trackUsage(usage),
   persistThreads,
   prefixTextWithTimestamp,
   resolveEffectiveAgentId,
   resolveThreadId,
   shellQuote,
+  threadRotationTurns: THREAD_ROTATION_TURNS,
   threadTurns,
   wrapCommandWithPty,
   defaultTimeZone: DEFAULT_TIME_ZONE,
@@ -410,6 +444,7 @@ registerCommands({
   setMemoryEventsSinceCurate: (value) => {
     memoryEventsSinceCurate = value;
   },
+  getUsageStats: (chatId) => tokenTracker.getUsageStats(chatId),
   startTyping,
   threadTurns,
   updateConfig,
@@ -451,6 +486,10 @@ registerHandlers({
   startTyping,
   transcribeAudio,
 });
+
+tokenTracker.hydrate().catch((err) =>
+  console.warn('Failed to hydrate token usage:', err)
+);
 
 bootstrapApp({
   bot,

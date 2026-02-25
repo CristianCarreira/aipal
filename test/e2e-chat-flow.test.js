@@ -232,3 +232,138 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   const persistedThreadId = threads.get(buildThreadKey(12345, undefined, 'fake'));
   assert.equal(persistedThreadId, 'thread-1');
 });
+
+test('thread rotation resets threadId after N turns and re-injects bootstrap', async () => {
+  const threads = new Map();
+  const threadTurns = new Map();
+  const buildCalls = [];
+  const promptHistory = [];
+  let persistThreadsCalled = 0;
+  let turnCounter = 0;
+
+  const agent = {
+    id: 'fake',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      buildCalls.push(options);
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      turnCounter++;
+      return { text: `reply-${turnCounter}`, threadId: `thread-${turnCounter}`, sawJson: true };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async ({ threadKey }) => `BOOTSTRAP(${threadKey})`,
+    buildMemoryRetrievalContext: async () => 'RETRIEVAL',
+    buildPrompt: (text) => text,
+    documentDir: '/tmp',
+    execLocal: async (_cmd, _args, options) => {
+      promptHistory.push((options && options.env && options.env.AIPAL_PROMPT) || '');
+      return 'output';
+    },
+    fileInstructionsEvery: 100,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Fake',
+    getGlobalAgent: () => 'fake',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => { persistThreadsCalled++; },
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'fake',
+    resolveThreadId,
+    threadRotationTurns: 3,
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+  });
+
+  // Turn 1: new thread — should include bootstrap
+  await agentRunner.runAgentForChat(100, 'message one');
+  assert.match(promptHistory[0], /BOOTSTRAP\(/);
+  assert.equal(buildCalls[0].threadId, undefined);
+
+  // Turn 2: has threadId — no bootstrap
+  await agentRunner.runAgentForChat(100, 'message two');
+  assert.doesNotMatch(promptHistory[1], /BOOTSTRAP\(/);
+  assert.ok(buildCalls[1].threadId);
+
+  // Turn 3: turnCount >= 3 triggers rotation — thread deleted, bootstrap re-injected
+  await agentRunner.runAgentForChat(100, 'message three');
+  assert.match(promptHistory[2], /BOOTSTRAP\(/);
+  assert.equal(buildCalls[2].threadId, undefined);
+
+  // Turn 4 (post-rotation): new thread established, continues without bootstrap
+  await agentRunner.runAgentForChat(100, 'message four');
+  assert.doesNotMatch(promptHistory[3], /BOOTSTRAP\(/);
+  assert.ok(buildCalls[3].threadId);
+
+  assert.ok(persistThreadsCalled >= 1, 'persistThreads should have been called');
+});
+
+test('trivial messages (< 6 chars) skip memory retrieval', async () => {
+  const threads = new Map();
+  const threadTurns = new Map();
+  const retrievalCalls = [];
+
+  const agent = {
+    id: 'fake',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      return { text: 'ok', threadId: 'thread-1', sawJson: true };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async () => 'BOOTSTRAP',
+    buildMemoryRetrievalContext: async (opts) => {
+      retrievalCalls.push(opts.query);
+      return 'RETRIEVAL';
+    },
+    buildPrompt: (text) => text,
+    documentDir: '/tmp',
+    execLocal: async () => 'output',
+    fileInstructionsEvery: 100,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Fake',
+    getGlobalAgent: () => 'fake',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => {},
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'fake',
+    resolveThreadId,
+    threadRotationTurns: 0,
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+  });
+
+  // Short messages should skip retrieval
+  await agentRunner.runAgentForChat(200, 'ok');
+  await agentRunner.runAgentForChat(200, 'sí');
+  await agentRunner.runAgentForChat(200, 'no');
+
+  assert.equal(retrievalCalls.length, 0, 'No retrieval calls for short messages');
+
+  // Normal-length message should trigger retrieval
+  await agentRunner.runAgentForChat(200, 'cuéntame más sobre el proyecto');
+  assert.equal(retrievalCalls.length, 1, 'Retrieval called for normal message');
+  assert.equal(retrievalCalls[0], 'cuéntame más sobre el proyecto');
+});

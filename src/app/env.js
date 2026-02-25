@@ -45,7 +45,15 @@ const MEMORY_CURATE_EVERY = readNumberEnv(
 );
 const MEMORY_RETRIEVAL_LIMIT = readNumberEnv(
   process.env.AIPAL_MEMORY_RETRIEVAL_LIMIT,
-  8
+  5
+);
+const THREAD_ROTATION_TURNS = readNumberEnv(
+  process.env.AIPAL_THREAD_ROTATION_TURNS,
+  0  // 0 = disabled
+);
+const TOKEN_BUDGET_DAILY = readNumberEnv(
+  process.env.AIPAL_TOKEN_BUDGET_DAILY,
+  0  // 0 = no limit, tracking only
 );
 const SHUTDOWN_DRAIN_TIMEOUT_MS = readNumberEnv(
   process.env.AIPAL_SHUTDOWN_DRAIN_TIMEOUT_MS,
@@ -55,6 +63,7 @@ const SCRIPT_NAME_REGEX = /^[A-Za-z0-9_-]+$/;
 
 module.exports = {
   AGENT_MAX_BUFFER,
+  TOKEN_BUDGET_DAILY,
   AGENT_TIMEOUT_MS,
   DOCUMENT_CLEANUP_INTERVAL_MS,
   DOCUMENT_DIR,
@@ -69,6 +78,7 @@ module.exports = {
   SCRIPTS_DIR,
   SCRIPT_TIMEOUT_MS,
   SHUTDOWN_DRAIN_TIMEOUT_MS,
+  THREAD_ROTATION_TURNS,
   WHISPER_CMD,
   WHISPER_LANGUAGE,
   WHISPER_MODEL,
