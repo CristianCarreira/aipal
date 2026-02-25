@@ -112,7 +112,7 @@ Notes:
 
 ## Token usage tracking
 
-The bot estimates token consumption for every agent interaction (~4 chars/token) and tracks daily totals.
+The bot tracks token consumption for every agent interaction. When using the Claude CLI, **real token counts and cost** are extracted directly from the CLI's JSON output (which includes `usage.input_tokens`, `usage.output_tokens`, and `total_cost_usd`). For other agents (codex, gemini, opencode), the bot falls back to estimation (~4 chars/token).
 
 ### `/usage` command
 Shows estimated token consumption for the current day:
@@ -129,7 +129,9 @@ If no budget is configured, the budget line and progress bar are omitted.
 
 Input tokens are tracked **immediately** when the agent starts (before the CLI runs), so `/usage` reflects in-flight work even for long-running cron jobs. Output tokens are added once the agent finishes.
 
-Token estimation accounts for **accumulated thread context**: when resuming an existing thread, the CLI re-sends the full conversation history to the API, so each turn's input cost includes all prior prompts and responses — not just the new message. Thread rotation resets the accumulation.
+When using the Claude CLI, token counts come directly from the API response — no estimation needed. For other agents, token estimation accounts for **accumulated thread context**: when resuming an existing thread, the CLI re-sends the full conversation history to the API, so each turn's input cost includes all prior prompts and responses — not just the new message. Thread rotation resets the accumulation.
+
+When real cost data is available from the CLI (`total_cost_usd`), the `/usage` command also shows the actual dollar cost.
 
 ### Budget enforcement
 When `AIPAL_TOKEN_BUDGET_DAILY` is set and the budget is exceeded (100%), the bot **blocks new messages** with a notice ("Daily token budget exhausted") until the next day. Commands like `/usage`, `/help`, `/status` still work.

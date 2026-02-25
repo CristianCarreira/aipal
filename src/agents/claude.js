@@ -70,7 +70,18 @@ function parseOutput(output) {
   if (typeof text !== 'string' && payload.structured_output != null) {
     text = JSON.stringify(payload.structured_output, null, 2);
   }
-  return { text: typeof text === 'string' ? text.trim() : '', threadId, sawJson: true };
+
+  let usage;
+  if (payload.usage && typeof payload.usage === 'object') {
+    const inputTokens = Number(payload.usage.input_tokens) || 0;
+    const outputTokens = Number(payload.usage.output_tokens) || 0;
+    const cacheCreationTokens = Number(payload.usage.cache_creation_input_tokens) || 0;
+    const cacheReadTokens = Number(payload.usage.cache_read_input_tokens) || 0;
+    usage = { inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens };
+  }
+  const costUsd = typeof payload.total_cost_usd === 'number' ? payload.total_cost_usd : undefined;
+
+  return { text: typeof text === 'string' ? text.trim() : '', threadId, sawJson: true, usage, costUsd };
 }
 
 module.exports = {

@@ -564,6 +564,77 @@ test('token estimation accounts for accumulated thread context', async () => {
   );
 });
 
+test('real usage from CLI corrects estimated tokens', async () => {
+  const threads = new Map();
+  const threadTurns = new Map();
+  const tokenCalls = [];
+
+  const agent = {
+    id: 'claude',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      return {
+        text: 'Response text',
+        threadId: 'thread-1',
+        sawJson: true,
+        usage: { inputTokens: 3000, outputTokens: 500, cacheCreationTokens: 0, cacheReadTokens: 0 },
+        costUsd: 0.0125,
+      };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async () => 'BOOTSTRAP',
+    buildMemoryRetrievalContext: async () => '',
+    buildPrompt: (text) => text,
+    documentDir: '/tmp',
+    execLocal: async () => 'output',
+    fileInstructionsEvery: 100,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Claude',
+    getGlobalAgent: () => 'claude',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => {},
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'claude',
+    resolveThreadId,
+    threadRotationTurns: 0,
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+    onTokenUsage: (usage) => tokenCalls.push(usage),
+  });
+
+  await agentRunner.runAgentForChat(500, 'Hello there friend');
+
+  // Phase 1: estimated input tokens
+  assert.equal(tokenCalls.length, 2);
+  const phase1 = tokenCalls[0];
+  assert.ok(phase1.inputTokens > 0, 'Phase 1 has estimated input');
+  assert.equal(phase1.outputTokens, 0);
+
+  // Phase 2: correction with real data
+  const phase2 = tokenCalls[1];
+  assert.equal(phase2.outputTokens, 500, 'Phase 2 uses real output tokens');
+  assert.equal(phase2.costUsd, 0.0125, 'Phase 2 passes real cost');
+
+  // Total should equal real values: 3000 input + 500 output = 3500
+  const totalInput = phase1.inputTokens + phase2.inputTokens;
+  const totalOutput = phase1.outputTokens + phase2.outputTokens;
+  assert.equal(totalInput, 3000, 'Total input matches real usage');
+  assert.equal(totalOutput, 500, 'Total output matches real usage');
+});
+
 test('thread rotation resets accumulated context estimation', async () => {
   const threads = new Map();
   const threadTurns = new Map();

@@ -32,6 +32,10 @@ function registerUsageCommand(options) {
       lines.push(`  Breakdown: ${srcParts.join(' | ')}`);
     }
 
+    if (stats.totalCostUsd > 0) {
+      lines.push(`  Cost: $${stats.totalCostUsd.toFixed(4)}`);
+    }
+
     if (stats.budgetDaily > 0 && stats.pct != null) {
       lines.push(
         `  Budget: ${formatNumber(stats.totalTokens)} / ${formatNumber(stats.budgetDaily)} (${stats.pct}%)`

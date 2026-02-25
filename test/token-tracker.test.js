@@ -272,6 +272,40 @@ test('getBudgetPct returns null when no budget', () => {
   assert.equal(tracker.getBudgetPct(), null);
 });
 
+test('trackUsage accumulates costUsd', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 100, outputTokens: 50, costUsd: 0.005 });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 200, outputTokens: 100, costUsd: 0.012 });
+
+  const stats = tracker.getUsageStats();
+  assert.equal(stats.totalCostUsd, 0.017);
+});
+
+test('trackUsage ignores costUsd when not provided', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 100, outputTokens: 50 });
+
+  const stats = tracker.getUsageStats();
+  assert.equal(stats.totalCostUsd, 0);
+});
+
+test('trackUsage handles negative input correction from real usage', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+
+  // Phase 1: estimated input
+  await tracker.trackUsage({ chatId: '100', inputTokens: 500, outputTokens: 0 });
+  // Phase 2: real usage correction (real was 400, so correction = 400 - 500 = -100)
+  await tracker.trackUsage({ chatId: '100', inputTokens: -100, outputTokens: 200, costUsd: 0.01 });
+
+  const stats = tracker.getUsageStats('100');
+  assert.equal(stats.totalTokens, 600, 'Total should be 400 input + 200 output');
+  assert.equal(stats.totalInput, 400);
+  assert.equal(stats.totalOutput, 200);
+  assert.equal(stats.totalCostUsd, 0.01);
+});
+
 test('hydrate loads sources from saved state', async () => {
   const today = new Date().toISOString().slice(0, 10);
   const savedState = {

@@ -10,12 +10,13 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
     chats: {},
     sources: {},
     alertsSent: [],
+    totalCostUsd: 0,
   };
 
   function ensureToday() {
     const today = todayDateString();
     if (state.date !== today) {
-      state = { date: today, chats: {}, sources: {}, alertsSent: [] };
+      state = { date: today, chats: {}, sources: {}, alertsSent: [], totalCostUsd: 0 };
     }
   }
 
@@ -27,7 +28,7 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
     return total;
   }
 
-  async function trackUsage({ chatId, topicId, inputTokens, outputTokens, source }) {
+  async function trackUsage({ chatId, topicId, inputTokens, outputTokens, source, costUsd }) {
     ensureToday();
     const key = String(chatId || 'unknown');
     if (!state.chats[key]) {
@@ -44,6 +45,10 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
       state.sources[source].input += inputTokens;
       state.sources[source].output += outputTokens;
       if (inputTokens > 0) state.sources[source].messages += 1;
+    }
+
+    if (typeof costUsd === 'number' && costUsd > 0) {
+      state.totalCostUsd = (state.totalCostUsd || 0) + costUsd;
     }
 
     if (budgetDaily > 0 && sendAlert) {
@@ -93,6 +98,7 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
       pct: budgetDaily > 0 ? Math.round((totalTokens / budgetDaily) * 1000) / 10 : null,
       alertsSent: [...state.alertsSent],
       sources: {},
+      totalCostUsd: state.totalCostUsd || 0,
     };
 
     for (const [src, bucket] of Object.entries(state.sources)) {
@@ -120,7 +126,7 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
   }
 
   function resetUsage() {
-    state = { date: todayDateString(), chats: {}, sources: {}, alertsSent: [] };
+    state = { date: todayDateString(), chats: {}, sources: {}, alertsSent: [], totalCostUsd: 0 };
     if (persistUsage) {
       persistUsage(state).catch((err) =>
         console.warn('Failed to persist usage after reset:', err)
@@ -138,6 +144,7 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
           chats: loaded.chats || {},
           sources: loaded.sources || {},
           alertsSent: Array.isArray(loaded.alertsSent) ? loaded.alertsSent : [],
+          totalCostUsd: loaded.totalCostUsd || 0,
         };
       }
     } catch (err) {

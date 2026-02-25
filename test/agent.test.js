@@ -165,3 +165,39 @@ test('listModelsCommand builds opencode models command', () => {
   assert.match(command, /opencode models/);
 });
 
+test('claude parseOutput extracts usage and cost from JSON', () => {
+  const agent = getAgent('claude');
+  const payload = {
+    session_id: '12345678-1234-1234-1234-123456789abc',
+    result: 'Hello world',
+    total_cost_usd: 0.0035,
+    usage: {
+      input_tokens: 1500,
+      output_tokens: 200,
+      cache_creation_input_tokens: 100,
+      cache_read_input_tokens: 800,
+    },
+  };
+  const parsed = agent.parseOutput(JSON.stringify(payload));
+  assert.equal(parsed.text, 'Hello world');
+  assert.equal(parsed.threadId, '12345678-1234-1234-1234-123456789abc');
+  assert.ok(parsed.usage);
+  assert.equal(parsed.usage.inputTokens, 1500);
+  assert.equal(parsed.usage.outputTokens, 200);
+  assert.equal(parsed.usage.cacheCreationTokens, 100);
+  assert.equal(parsed.usage.cacheReadTokens, 800);
+  assert.equal(parsed.costUsd, 0.0035);
+});
+
+test('claude parseOutput returns undefined usage when not present', () => {
+  const agent = getAgent('claude');
+  const payload = {
+    session_id: '12345678-1234-1234-1234-123456789abc',
+    result: 'No usage data',
+  };
+  const parsed = agent.parseOutput(JSON.stringify(payload));
+  assert.equal(parsed.text, 'No usage data');
+  assert.equal(parsed.usage, undefined);
+  assert.equal(parsed.costUsd, undefined);
+});
+
