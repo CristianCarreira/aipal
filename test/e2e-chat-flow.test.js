@@ -628,6 +628,141 @@ test('thread rotation resets accumulated context estimation', async () => {
   );
 });
 
+test('post-restart safety: forces rotation when threadContextChars is unknown', async () => {
+  // Simulate restart: thread exists on disk but threadContextChars is empty (in-memory)
+  const threads = new Map();
+  threads.set('800:root:fake', 'old-thread-from-disk');
+  const threadTurns = new Map();
+  const bootstrapCalls = [];
+  const buildCalls = [];
+
+  const agent = {
+    id: 'fake',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      buildCalls.push(options);
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      return { text: 'response', threadId: 'new-thread', sawJson: true };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async (opts) => {
+      bootstrapCalls.push(opts);
+      return 'BOOT';
+    },
+    buildMemoryRetrievalContext: async () => '',
+    buildPrompt: (text) => text,
+    documentDir: '/tmp',
+    execLocal: async () => 'output',
+    fileInstructionsEvery: 100,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Fake',
+    getGlobalAgent: () => 'fake',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => {},
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'fake',
+    resolveThreadId,
+    threadMaxContextChars: 40000,
+    threadRotationTurns: 0,  // Turn rotation disabled
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+  });
+
+  // First message after "restart": thread exists but context size is unknown
+  await agentRunner.runAgentForChat(800, 'hello after restart');
+
+  // Should have forced rotation (new thread, not resuming old-thread-from-disk)
+  assert.equal(buildCalls[0].threadId, undefined, 'Should start new thread, not resume old one');
+  assert.equal(bootstrapCalls.length, 1, 'Should inject bootstrap after forced rotation');
+  assert.equal(bootstrapCalls[0].compact, true, 'Should use compact bootstrap');
+
+  // Second message: should now have context tracked, no forced rotation
+  buildCalls.length = 0;
+  bootstrapCalls.length = 0;
+  await agentRunner.runAgentForChat(800, 'second message after restart');
+  assert.ok(buildCalls[0].threadId, 'Should resume new thread normally');
+  assert.equal(bootstrapCalls.length, 0, 'No bootstrap on continuation');
+});
+
+test('style instructions only included on new threads and periodic refresh', async () => {
+  const threads = new Map();
+  const threadTurns = new Map();
+  const promptHistory = [];
+
+  const agent = {
+    id: 'fake',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      return { text: 'ok', threadId: 'thread-1', sawJson: true };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async () => 'BOOTSTRAP',
+    buildMemoryRetrievalContext: async () => '',
+    buildPrompt,
+    documentDir: '/tmp',
+    execLocal: async (_cmd, _args, options) => {
+      promptHistory.push((options && options.env && options.env.AIPAL_PROMPT) || '');
+      return 'output';
+    },
+    fileInstructionsEvery: 5,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Fake',
+    getGlobalAgent: () => 'fake',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => {},
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'fake',
+    resolveThreadId,
+    threadMaxContextChars: 0,
+    threadRotationTurns: 0,
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+  });
+
+  // Turn 1: new thread — should include style instructions
+  await agentRunner.runAgentForChat(900, 'hello world test');
+  assert.match(promptHistory[0], /Output style for Telegram/, 'Turn 1 has style instructions');
+  assert.match(promptHistory[0], /If you generate an image/, 'Turn 1 has file instructions');
+
+  // Turns 2-4: continuing thread — should NOT include style/file instructions
+  for (let i = 0; i < 3; i++) {
+    await agentRunner.runAgentForChat(900, `message number ${i + 2} here`);
+  }
+  assert.doesNotMatch(promptHistory[1], /Output style for Telegram/, 'Turn 2 skips style');
+  assert.doesNotMatch(promptHistory[2], /Output style for Telegram/, 'Turn 3 skips style');
+  assert.doesNotMatch(promptHistory[3], /Output style for Telegram/, 'Turn 4 skips style');
+
+  // Turn 5: fileInstructionsEvery=5, so should re-include
+  await agentRunner.runAgentForChat(900, 'message five for test');
+  assert.match(promptHistory[4], /Output style for Telegram/, 'Turn 5 refreshes style');
+  assert.match(promptHistory[4], /If you generate an image/, 'Turn 5 refreshes file instructions');
+});
+
 test('context size limit forces thread rotation before turn limit', async () => {
   const threads = new Map();
   const threadTurns = new Map();

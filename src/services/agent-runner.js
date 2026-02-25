@@ -150,10 +150,13 @@ function createAgentRunner(options) {
     const contextSize = threadContextChars.get(threadKey) || 0;
     const turnLimitHit = threadRotationTurns > 0 && threadId && turnCount >= threadRotationTurns;
     const contextLimitHit = threadMaxContextChars > 0 && threadId && contextSize >= threadMaxContextChars;
-    if (turnLimitHit || contextLimitHit) {
-      const reason = contextLimitHit
-        ? `context=${contextSize} chars (limit ${threadMaxContextChars})`
-        : `turns=${turnCount}`;
+    const unknownContext = threadMaxContextChars > 0 && threadId && !threadContextChars.has(threadKey);
+    if (turnLimitHit || contextLimitHit || unknownContext) {
+      const reason = unknownContext
+        ? 'unknown context size (post-restart safety)'
+        : contextLimitHit
+          ? `context=${contextSize} chars (limit ${threadMaxContextChars})`
+          : `turns=${turnCount}`;
       console.info(
         `Thread rotation: resetting thread chat=${chatId} topic=${topicId || 'root'} ${reason}`
       );
@@ -167,7 +170,7 @@ function createAgentRunner(options) {
       );
     }
 
-    const shouldIncludeFileInstructions =
+    const shouldIncludeInstructions =
       !threadId || turnCount % fileInstructionsEvery === 0;
     if (migrated) {
       persistThreads().catch((err) =>
@@ -215,7 +218,7 @@ function createAgentRunner(options) {
       scriptContext,
       documentPaths || [],
       documentDir,
-      { includeFileInstructions: shouldIncludeFileInstructions }
+      { includeFileInstructions: shouldIncludeInstructions, includeStyleInstructions: shouldIncludeInstructions }
     );
     const promptExpression = '"$AIPAL_PROMPT"';
     const threadIdExpression = threadId ? '"$AIPAL_THREAD_ID"' : undefined;

@@ -293,10 +293,13 @@ function buildPrompt(
   options = {}
 ) {
   const includeFileInstructions = options.includeFileInstructions !== false;
+  const includeStyleInstructions = options.includeStyleInstructions !== false;
   const lines = [];
-  lines.push(
-    'Output style for Telegram: reply only with the final user-facing answer. Do not include reasoning, chain-of-thought, planning steps, or internal process.'
-  );
+  if (includeStyleInstructions) {
+    lines.push(
+      'Output style for Telegram: reply only with the final user-facing answer. Do not include reasoning, chain-of-thought, planning steps, or internal process.'
+    );
+  }
   const context = (scriptContext || '').trim();
   if (context) {
     lines.push('Context from last slash command output:');

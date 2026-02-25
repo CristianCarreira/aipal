@@ -53,7 +53,7 @@ const THREAD_ROTATION_TURNS = readNumberEnv(
 );
 const THREAD_MAX_CONTEXT_CHARS = readNumberEnv(
   process.env.AIPAL_THREAD_MAX_CONTEXT_CHARS,
-  40000  // ~10K tokens; 0 = disabled
+  40000  // ~10K tokens
 );
 const MEMORY_CAPTURE_MAX_CHARS = readNumberEnv(
   process.env.AIPAL_MEMORY_CAPTURE_MAX_CHARS,
