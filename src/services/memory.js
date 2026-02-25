@@ -108,7 +108,6 @@ function createMemoryService(options) {
     buildBootstrapContext,
     captureMemoryEvent,
     extractMemoryText,
-    maybeAutoCurateMemory,
   };
 }
 

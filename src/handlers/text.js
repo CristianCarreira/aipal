@@ -118,21 +118,21 @@ function registerTextHandler(options) {
             console.error('Failed to read script metadata', err);
             scriptMeta = {};
           }
-          const output = await runScriptCommand(slash.name, slash.args);
           const llmPrompt =
             typeof scriptMeta?.llm?.prompt === 'string'
               ? scriptMeta.llm.prompt.trim()
               : '';
+          if (llmPrompt && isBudgetExhausted && isBudgetExhausted()) {
+            const extra = topicId ? { message_thread_id: topicId } : {};
+            await bot.telegram.sendMessage(
+              chatId,
+              'Daily token budget exhausted. Use /usage for details.',
+              extra
+            ).catch(() => {});
+            return;
+          }
+          const output = await runScriptCommand(slash.name, slash.args);
           if (llmPrompt) {
-            if (isBudgetExhausted && isBudgetExhausted()) {
-              const extra = topicId ? { message_thread_id: topicId } : {};
-              await bot.telegram.sendMessage(
-                chatId,
-                'Daily token budget exhausted. Use /usage for details.',
-                extra
-              ).catch(() => {});
-              return;
-            }
             const scriptContext = formatScriptContext({
               name: slash.name,
               output,
