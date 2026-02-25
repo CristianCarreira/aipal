@@ -119,11 +119,16 @@ Shows estimated token consumption for the current day:
 Token usage (2025-06-15):
   Estimated: 12,450 tokens (input: 8,200 / output: 4,250)
   Messages: 23
+  Breakdown: chat: 5,200 tok (8 msgs) | cron: 7,250 tok (15 msgs)
   Budget: 12,450 / 100,000 (12.5%)
   ████░░░░░░ 12.5%
 ```
 
 If no budget is configured, the budget line and progress bar are omitted.
+
+Input tokens are tracked **immediately** when the agent starts (before the CLI runs), so `/usage` reflects in-flight work even for long-running cron jobs. Output tokens are added once the agent finishes.
+
+Token estimation accounts for **accumulated thread context**: when resuming an existing thread, the CLI re-sends the full conversation history to the API, so each turn's input cost includes all prior prompts and responses — not just the new message. Thread rotation resets the accumulation.
 
 ### Environment knobs
 - `AIPAL_TOKEN_BUDGET_DAILY`: daily token budget. `0` = no limit (default), only tracks usage. When set to a positive number, the bot sends proactive Telegram alerts when consumption crosses the following thresholds: **25%, 50%, 75%, 85%, 95%**. Each alert is sent only once per day.

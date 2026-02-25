@@ -30,6 +30,7 @@ function createAgentRunner(options) {
   } = options;
 
   const retrievalCache = new Map();
+  const threadContextChars = new Map();
 
   function getCachedRetrieval(key) {
     const entry = retrievalCache.get(key);
@@ -80,6 +81,11 @@ function createAgentRunner(options) {
       commandToRun = `${commandToRun} 2>&1`;
     }
 
+    if (onTokenUsage) {
+      const inputTokens = Math.ceil(promptText.length / 4);
+      onTokenUsage({ chatId: 'oneshot', inputTokens, outputTokens: 0, source: 'oneshot' });
+    }
+
     const startedAt = Date.now();
     console.info(`Agent one-shot start agent=${getAgentLabel(globalAgent)}`);
     let output;
@@ -112,16 +118,16 @@ function createAgentRunner(options) {
       );
     }
     if (onTokenUsage) {
-      const inputTokens = Math.ceil(promptText.length / 4);
       const outputTokens = Math.ceil((parsed.text || output || '').length / 4);
-      onTokenUsage({ chatId: 'oneshot', inputTokens, outputTokens });
+      onTokenUsage({ chatId: 'oneshot', inputTokens: 0, outputTokens, source: 'oneshot' });
     }
     return parsed.text || output;
   }
 
   async function runAgentForChat(chatId, prompt, runOptions = {}) {
-    const { topicId, agentId: overrideAgentId, imagePaths, scriptContext, documentPaths } =
+    const { topicId, agentId: overrideAgentId, imagePaths, scriptContext, documentPaths, source: runSource } =
       runOptions;
+    const source = runSource || 'chat';
     const effectiveAgentId = resolveEffectiveAgentId(
       chatId,
       topicId,
@@ -146,6 +152,7 @@ function createAgentRunner(options) {
       );
       threads.delete(threadKey);
       threadTurns.set(threadKey, 1);
+      threadContextChars.delete(threadKey);
       threadId = undefined;
       isRotation = true;
       persistThreads().catch((err) =>
@@ -227,6 +234,12 @@ function createAgentRunner(options) {
       commandToRun = `${commandToRun} 2>&1`;
     }
 
+    if (onTokenUsage) {
+      const accumulated = threadId ? (threadContextChars.get(threadKey) || 0) : 0;
+      const inputTokens = Math.ceil((accumulated + finalPrompt.length) / 4);
+      onTokenUsage({ chatId, topicId, inputTokens, outputTokens: 0, source });
+    }
+
     const startedAt = Date.now();
     console.info(
       `Agent start chat=${chatId} topic=${topicId || 'root'} agent=${agent.id} thread=${threadId || 'new'}`
@@ -291,11 +304,15 @@ function createAgentRunner(options) {
         console.warn('Failed to persist threads:', err)
       );
     }
+    const responseText = parsed.text || output || '';
     if (onTokenUsage) {
-      const inputTokens = Math.ceil(finalPrompt.length / 4);
-      const outputTokens = Math.ceil((parsed.text || output || '').length / 4);
-      onTokenUsage({ chatId, topicId, inputTokens, outputTokens });
+      const outputTokens = Math.ceil(responseText.length / 4);
+      onTokenUsage({ chatId, topicId, inputTokens: 0, outputTokens, source });
     }
+    threadContextChars.set(
+      threadKey,
+      (threadContextChars.get(threadKey) || 0) + finalPrompt.length + responseText.length
+    );
     return parsed.text || output;
   }
 

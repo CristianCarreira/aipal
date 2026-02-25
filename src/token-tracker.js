@@ -8,13 +8,14 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
   let state = {
     date: todayDateString(),
     chats: {},
+    sources: {},
     alertsSent: [],
   };
 
   function ensureToday() {
     const today = todayDateString();
     if (state.date !== today) {
-      state = { date: today, chats: {}, alertsSent: [] };
+      state = { date: today, chats: {}, sources: {}, alertsSent: [] };
     }
   }
 
@@ -26,7 +27,7 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
     return total;
   }
 
-  async function trackUsage({ chatId, topicId, inputTokens, outputTokens }) {
+  async function trackUsage({ chatId, topicId, inputTokens, outputTokens, source }) {
     ensureToday();
     const key = String(chatId || 'unknown');
     if (!state.chats[key]) {
@@ -34,7 +35,16 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
     }
     state.chats[key].input += inputTokens;
     state.chats[key].output += outputTokens;
-    state.chats[key].messages += 1;
+    if (inputTokens > 0) state.chats[key].messages += 1;
+
+    if (source) {
+      if (!state.sources[source]) {
+        state.sources[source] = { input: 0, output: 0, messages: 0 };
+      }
+      state.sources[source].input += inputTokens;
+      state.sources[source].output += outputTokens;
+      if (inputTokens > 0) state.sources[source].messages += 1;
+    }
 
     if (budgetDaily > 0 && sendAlert) {
       const totalTokens = getTotalTokens();
@@ -82,7 +92,17 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
       budgetDaily,
       pct: budgetDaily > 0 ? Math.round((totalTokens / budgetDaily) * 1000) / 10 : null,
       alertsSent: [...state.alertsSent],
+      sources: {},
     };
+
+    for (const [src, bucket] of Object.entries(state.sources)) {
+      result.sources[src] = {
+        input: bucket.input,
+        output: bucket.output,
+        messages: bucket.messages,
+        tokens: bucket.input + bucket.output,
+      };
+    }
 
     if (chatId != null) {
       const chat = state.chats[String(chatId)];
@@ -100,7 +120,7 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
   }
 
   function resetUsage() {
-    state = { date: todayDateString(), chats: {}, alertsSent: [] };
+    state = { date: todayDateString(), chats: {}, sources: {}, alertsSent: [] };
     if (persistUsage) {
       persistUsage(state).catch((err) =>
         console.warn('Failed to persist usage after reset:', err)
@@ -116,6 +136,7 @@ function createTokenTracker({ budgetDaily, sendAlert, persistUsage, loadUsage })
         state = {
           date: loaded.date,
           chats: loaded.chats || {},
+          sources: loaded.sources || {},
           alertsSent: Array.isArray(loaded.alertsSent) ? loaded.alertsSent : [],
         };
       }

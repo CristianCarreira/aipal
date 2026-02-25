@@ -33,6 +33,7 @@ function createCronHandler(options) {
       const response = await runAgentForChat(chatId, prompt, {
         agentId: agent,
         topicId,
+        source: 'cron',
       });
       await captureMemoryEvent({
         threadKey: memoryThreadKey,

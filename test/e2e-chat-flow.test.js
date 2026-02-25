@@ -487,6 +487,147 @@ test('compact bootstrap truncates soul and tools content', async () => {
   assert.ok(soulMatch[1].length <= 800, `Soul truncated to <=800 chars (got ${soulMatch[1].length})`);
 });
 
+test('token estimation accounts for accumulated thread context', async () => {
+  const threads = new Map();
+  const threadTurns = new Map();
+  const tokenCalls = [];
+
+  const agent = {
+    id: 'fake',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      // Simulate a long response (~2000 chars)
+      return { text: 'R'.repeat(2000), threadId: 'thread-1', sawJson: true };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async () => 'BOOTSTRAP',
+    buildMemoryRetrievalContext: async () => '',
+    buildPrompt: (text) => text,
+    documentDir: '/tmp',
+    execLocal: async () => 'output',
+    fileInstructionsEvery: 100,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Fake',
+    getGlobalAgent: () => 'fake',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => {},
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'fake',
+    resolveThreadId,
+    threadRotationTurns: 0,
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+    onTokenUsage: (usage) => tokenCalls.push(usage),
+  });
+
+  // Turn 1: new thread — input is just the prompt (bootstrap + prompt)
+  await agentRunner.runAgentForChat(500, 'Hello there friend');
+  // Input call (phase 1) then output call (phase 2)
+  assert.equal(tokenCalls.length, 2);
+  const turn1Input = tokenCalls[0].inputTokens;
+  const turn1Output = tokenCalls[1].outputTokens;
+  assert.ok(turn1Input > 0);
+  assert.ok(turn1Output > 0);
+
+  // Turn 2: resuming thread — input should include accumulated context
+  tokenCalls.length = 0;
+  await agentRunner.runAgentForChat(500, 'Follow up message');
+  assert.equal(tokenCalls.length, 2);
+  const turn2Input = tokenCalls[0].inputTokens;
+  // Turn 2 input should be MUCH larger than turn 1 because it includes
+  // the accumulated context (turn 1 prompt + turn 1 response + turn 2 prompt)
+  assert.ok(
+    turn2Input > turn1Input,
+    `Turn 2 input (${turn2Input}) should be larger than turn 1 (${turn1Input}) due to accumulated context`
+  );
+
+  // Turn 3: accumulated grows further
+  tokenCalls.length = 0;
+  await agentRunner.runAgentForChat(500, 'Third message');
+  const turn3Input = tokenCalls[0].inputTokens;
+  assert.ok(
+    turn3Input > turn2Input,
+    `Turn 3 input (${turn3Input}) should be larger than turn 2 (${turn2Input})`
+  );
+});
+
+test('thread rotation resets accumulated context estimation', async () => {
+  const threads = new Map();
+  const threadTurns = new Map();
+  const tokenCalls = [];
+
+  const agent = {
+    id: 'fake',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      return { text: 'R'.repeat(2000), threadId: 'thread-1', sawJson: true };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async () => 'BOOT',
+    buildMemoryRetrievalContext: async () => '',
+    buildPrompt: (text) => text,
+    documentDir: '/tmp',
+    execLocal: async () => 'output',
+    fileInstructionsEvery: 100,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Fake',
+    getGlobalAgent: () => 'fake',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => {},
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'fake',
+    resolveThreadId,
+    threadRotationTurns: 3,
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+    onTokenUsage: (usage) => tokenCalls.push(usage),
+  });
+
+  // Turns 1-2: accumulate context
+  await agentRunner.runAgentForChat(600, 'message one');
+  await agentRunner.runAgentForChat(600, 'message two');
+
+  // Capture turn 2 input for comparison
+  const turn2Input = tokenCalls[2].inputTokens; // index 2 = turn 2 input phase
+
+  // Turn 3: triggers rotation — context should reset
+  tokenCalls.length = 0;
+  await agentRunner.runAgentForChat(600, 'message three');
+  const postRotationInput = tokenCalls[0].inputTokens;
+
+  // After rotation, input should be small again (just the new prompt, no accumulated context)
+  assert.ok(
+    postRotationInput < turn2Input,
+    `Post-rotation input (${postRotationInput}) should be smaller than turn 2 (${turn2Input})`
+  );
+});
+
 test('extractMemoryText truncates to memoryCaptureMaxChars', () => {
   const { createMemoryService } = require('../src/services/memory');
 

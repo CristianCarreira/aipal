@@ -199,3 +199,63 @@ test('hydrate loads saved state for current day', async () => {
 test('THRESHOLDS contains expected values', () => {
   assert.deepEqual(THRESHOLDS, [25, 50, 75, 85, 95]);
 });
+
+test('trackUsage tracks by source', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 50, outputTokens: 30, source: 'chat' });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 0, outputTokens: 20, source: 'chat' });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 40, outputTokens: 0, source: 'cron' });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 0, outputTokens: 60, source: 'cron' });
+
+  const stats = tracker.getUsageStats();
+  assert.equal(stats.totalTokens, 200);
+  // messages only counted when inputTokens > 0
+  assert.equal(stats.totalMessages, 2);
+
+  assert.ok(stats.sources.chat);
+  assert.equal(stats.sources.chat.tokens, 100);
+  assert.equal(stats.sources.chat.messages, 1);
+
+  assert.ok(stats.sources.cron);
+  assert.equal(stats.sources.cron.tokens, 100);
+  assert.equal(stats.sources.cron.messages, 1);
+});
+
+test('two-phase tracking counts messages only on input phase', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+
+  // Phase 1: input tokens (before agent runs)
+  await tracker.trackUsage({ chatId: '100', inputTokens: 100, outputTokens: 0, source: 'chat' });
+  // Phase 2: output tokens (after agent finishes)
+  await tracker.trackUsage({ chatId: '100', inputTokens: 0, outputTokens: 50, source: 'chat' });
+
+  const stats = tracker.getUsageStats('100');
+  assert.equal(stats.totalTokens, 150);
+  assert.equal(stats.totalMessages, 1, 'Only one message despite two trackUsage calls');
+  assert.equal(stats.chat.messages, 1);
+  assert.equal(stats.sources.chat.messages, 1);
+});
+
+test('hydrate loads sources from saved state', async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const savedState = {
+    date: today,
+    chats: { '100': { input: 200, output: 100, messages: 3 } },
+    sources: { cron: { input: 150, output: 80, messages: 2 }, chat: { input: 50, output: 20, messages: 1 } },
+    alertsSent: [25],
+  };
+
+  const tracker = createTokenTracker({
+    budgetDaily: 1000,
+    loadUsage: async () => savedState,
+  });
+
+  await tracker.hydrate();
+
+  const stats = tracker.getUsageStats();
+  assert.equal(stats.sources.cron.tokens, 230);
+  assert.equal(stats.sources.cron.messages, 2);
+  assert.equal(stats.sources.chat.tokens, 70);
+  assert.equal(stats.sources.chat.messages, 1);
+});

@@ -22,6 +22,16 @@ function registerUsageCommand(options) {
       `  Messages: ${stats.totalMessages}`,
     ];
 
+    const srcParts = [];
+    for (const [src, data] of Object.entries(stats.sources || {})) {
+      if (data.tokens > 0) {
+        srcParts.push(`${src}: ${formatNumber(data.tokens)} tok (${data.messages} msgs)`);
+      }
+    }
+    if (srcParts.length > 0) {
+      lines.push(`  Breakdown: ${srcParts.join(' | ')}`);
+    }
+
     if (stats.budgetDaily > 0 && stats.pct != null) {
       lines.push(
         `  Budget: ${formatNumber(stats.totalTokens)} / ${formatNumber(stats.budgetDaily)} (${stats.pct}%)`
