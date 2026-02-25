@@ -628,6 +628,78 @@ test('thread rotation resets accumulated context estimation', async () => {
   );
 });
 
+test('context size limit forces thread rotation before turn limit', async () => {
+  const threads = new Map();
+  const threadTurns = new Map();
+  const buildCalls = [];
+  const bootstrapCalls = [];
+
+  const agent = {
+    id: 'fake',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      buildCalls.push(options);
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      // Large response to blow past context limit quickly
+      return { text: 'R'.repeat(5000), threadId: 'thread-1', sawJson: true };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async (opts) => {
+      bootstrapCalls.push(opts);
+      return 'BOOT';
+    },
+    buildMemoryRetrievalContext: async () => '',
+    buildPrompt: (text) => text,
+    documentDir: '/tmp',
+    execLocal: async () => 'output',
+    fileInstructionsEvery: 100,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Fake',
+    getGlobalAgent: () => 'fake',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => {},
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'fake',
+    resolveThreadId,
+    threadMaxContextChars: 6000,  // Low limit — will trigger after turn 1
+    threadRotationTurns: 100,     // High turn limit — won't trigger
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+  });
+
+  // Turn 1: new thread, prompt ~10 chars + response 5000 chars = ~5010 accumulated
+  await agentRunner.runAgentForChat(700, 'msg one');
+  assert.equal(buildCalls[0].threadId, undefined, 'Turn 1 is new thread');
+  assert.equal(bootstrapCalls.length, 1);
+  assert.equal(bootstrapCalls[0].compact, false, 'Turn 1 is full bootstrap');
+
+  // Turn 2: resumes thread, accumulated ~5010 < 6000 — no rotation yet
+  await agentRunner.runAgentForChat(700, 'msg two');
+  assert.ok(buildCalls[1].threadId, 'Turn 2 resumes existing thread');
+  assert.equal(bootstrapCalls.length, 1, 'No new bootstrap on turn 2');
+
+  // Turn 3: accumulated is now ~10k (>6000) — context limit should force rotation
+  await agentRunner.runAgentForChat(700, 'msg three');
+  assert.equal(buildCalls[2].threadId, undefined, 'Turn 3 should start new thread (context limit hit)');
+  assert.equal(bootstrapCalls.length, 2, 'New bootstrap injected after context rotation');
+  assert.equal(bootstrapCalls[1].compact, true, 'Context rotation uses compact bootstrap');
+
+  // Verify turn limit was NOT the trigger (we set it to 100)
+  assert.ok(threadTurns.get('700:root:fake') <= 3, 'Turn count is still low');
+});
+
 test('extractMemoryText truncates to memoryCaptureMaxChars', () => {
   const { createMemoryService } = require('../src/services/memory');
 

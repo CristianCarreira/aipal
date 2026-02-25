@@ -22,6 +22,7 @@ function createAgentRunner(options) {
     prefixTextWithTimestamp,
     resolveEffectiveAgentId,
     resolveThreadId,
+    threadMaxContextChars,
     threadRotationTurns,
     threadTurns,
     wrapCommandWithPty,
@@ -146,9 +147,15 @@ function createAgentRunner(options) {
     threadTurns.set(threadKey, turnCount);
 
     let isRotation = false;
-    if (threadRotationTurns > 0 && threadId && turnCount >= threadRotationTurns) {
+    const contextSize = threadContextChars.get(threadKey) || 0;
+    const turnLimitHit = threadRotationTurns > 0 && threadId && turnCount >= threadRotationTurns;
+    const contextLimitHit = threadMaxContextChars > 0 && threadId && contextSize >= threadMaxContextChars;
+    if (turnLimitHit || contextLimitHit) {
+      const reason = contextLimitHit
+        ? `context=${contextSize} chars (limit ${threadMaxContextChars})`
+        : `turns=${turnCount}`;
       console.info(
-        `Thread rotation: resetting thread chat=${chatId} topic=${topicId || 'root'} turns=${turnCount}`
+        `Thread rotation: resetting thread chat=${chatId} topic=${topicId || 'root'} ${reason}`
       );
       threads.delete(threadKey);
       threadTurns.set(threadKey, 1);

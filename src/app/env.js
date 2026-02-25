@@ -51,6 +51,10 @@ const THREAD_ROTATION_TURNS = readNumberEnv(
   process.env.AIPAL_THREAD_ROTATION_TURNS,
   0  // 0 = disabled
 );
+const THREAD_MAX_CONTEXT_CHARS = readNumberEnv(
+  process.env.AIPAL_THREAD_MAX_CONTEXT_CHARS,
+  40000  // ~10K tokens; 0 = disabled
+);
 const MEMORY_CAPTURE_MAX_CHARS = readNumberEnv(
   process.env.AIPAL_MEMORY_CAPTURE_MAX_CHARS,
   500
@@ -83,6 +87,7 @@ module.exports = {
   SCRIPTS_DIR,
   SCRIPT_TIMEOUT_MS,
   SHUTDOWN_DRAIN_TIMEOUT_MS,
+  THREAD_MAX_CONTEXT_CHARS,
   THREAD_ROTATION_TURNS,
   WHISPER_CMD,
   WHISPER_LANGUAGE,
