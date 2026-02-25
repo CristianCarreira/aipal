@@ -3,13 +3,14 @@ function formatNumber(n) {
 }
 
 function buildProgressBar(pct, length = 10) {
-  const filled = Math.round((pct / 100) * length);
+  const clamped = Math.max(0, Math.min(100, pct));
+  const filled = Math.round((clamped / 100) * length);
   const empty = length - filled;
   return '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
 }
 
 function registerUsageCommand(options) {
-  const { bot, getUsageStats, getTopicId } = options;
+  const { bot, getUsageStats } = options;
 
   bot.command('usage', async (ctx) => {
     const chatId = ctx.chat?.id;

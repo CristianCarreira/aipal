@@ -88,6 +88,7 @@ function registerTextHandler(options) {
           'help',
           'document_scripts',
           'status',
+          'usage',
         ].includes(normalized)
       ) {
         return;

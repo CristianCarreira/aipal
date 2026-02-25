@@ -1,3 +1,5 @@
+const RETRIEVAL_CACHE_TTL_MS = 60000;
+
 function createAgentRunner(options) {
   const {
     agentMaxBuffer,
@@ -26,6 +28,29 @@ function createAgentRunner(options) {
     defaultTimeZone,
     onTokenUsage,
   } = options;
+
+  const retrievalCache = new Map();
+
+  function getCachedRetrieval(key) {
+    const entry = retrievalCache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() - entry.ts > RETRIEVAL_CACHE_TTL_MS) {
+      retrievalCache.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  function setCachedRetrieval(key, value) {
+    retrievalCache.set(key, { ts: Date.now(), value });
+    // Evict stale entries periodically (keep map bounded)
+    if (retrievalCache.size > 100) {
+      const now = Date.now();
+      for (const [k, v] of retrievalCache) {
+        if (now - v.ts > RETRIEVAL_CACHE_TTL_MS) retrievalCache.delete(k);
+      }
+    }
+  }
 
   async function runAgentOneShot(prompt) {
     const globalAgent = getGlobalAgent();
@@ -114,6 +139,7 @@ function createAgentRunner(options) {
     const turnCount = (threadTurns.get(threadKey) || 0) + 1;
     threadTurns.set(threadKey, turnCount);
 
+    let isRotation = false;
     if (threadRotationTurns > 0 && threadId && turnCount >= threadRotationTurns) {
       console.info(
         `Thread rotation: resetting thread chat=${chatId} topic=${topicId || 'root'} turns=${turnCount}`
@@ -121,6 +147,7 @@ function createAgentRunner(options) {
       threads.delete(threadKey);
       threadTurns.set(threadKey, 1);
       threadId = undefined;
+      isRotation = true;
       persistThreads().catch((err) =>
         console.warn('Failed to persist threads after rotation:', err)
       );
@@ -141,19 +168,24 @@ function createAgentRunner(options) {
       });
     }
     if (!threadId) {
-      const bootstrap = await buildBootstrapContext({ threadKey });
+      const bootstrap = await buildBootstrapContext({ threadKey, compact: isRotation });
       promptWithContext = promptWithContext
         ? `${bootstrap}\n\n${promptWithContext}`
         : bootstrap;
     }
     if (prompt.trim().length >= 6) {
-      const retrievalContext = await buildMemoryRetrievalContext({
-        query: prompt,
-        chatId,
-        topicId,
-        agentId: effectiveAgentId,
-        limit: memoryRetrievalLimit,
-      });
+      const cacheKey = `${chatId}:${topicId || ''}:${prompt.trim().slice(0, 200)}`;
+      let retrievalContext = getCachedRetrieval(cacheKey);
+      if (retrievalContext === undefined) {
+        retrievalContext = await buildMemoryRetrievalContext({
+          query: prompt,
+          chatId,
+          topicId,
+          agentId: effectiveAgentId,
+          limit: memoryRetrievalLimit,
+        });
+        setCachedRetrieval(cacheKey, retrievalContext || '');
+      }
       if (retrievalContext) {
         promptWithContext = promptWithContext
           ? `${promptWithContext}\n\n${retrievalContext}`

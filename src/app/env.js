@@ -51,6 +51,10 @@ const THREAD_ROTATION_TURNS = readNumberEnv(
   process.env.AIPAL_THREAD_ROTATION_TURNS,
   0  // 0 = disabled
 );
+const MEMORY_CAPTURE_MAX_CHARS = readNumberEnv(
+  process.env.AIPAL_MEMORY_CAPTURE_MAX_CHARS,
+  500
+);
 const TOKEN_BUDGET_DAILY = readNumberEnv(
   process.env.AIPAL_TOKEN_BUDGET_DAILY,
   0  // 0 = no limit, tracking only
@@ -63,6 +67,7 @@ const SCRIPT_NAME_REGEX = /^[A-Za-z0-9_-]+$/;
 
 module.exports = {
   AGENT_MAX_BUFFER,
+  MEMORY_CAPTURE_MAX_CHARS,
   TOKEN_BUDGET_DAILY,
   AGENT_TIMEOUT_MS,
   DOCUMENT_CLEANUP_INTERVAL_MS,

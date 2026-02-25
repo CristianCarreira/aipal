@@ -1,3 +1,11 @@
+const COMPACT_BOOTSTRAP_MAX_CHARS = 800;
+
+function truncateForCompact(text, maxChars) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed || trimmed.length <= maxChars) return trimmed;
+  return `${trimmed.slice(0, maxChars - 1)}\u2026`;
+}
+
 function createMemoryService(options) {
   const {
     appendMemoryEvent,
@@ -8,6 +16,7 @@ function createMemoryService(options) {
     extractDocumentTokens,
     extractImageTokens,
     imageDir,
+    memoryCaptureMaxChars,
     memoryCurateEvery,
     memoryPath,
     persistMemory,
@@ -23,7 +32,11 @@ function createMemoryService(options) {
   function extractMemoryText(response) {
     const { cleanedText: withoutImages } = extractImageTokens(response || '', imageDir);
     const { cleanedText } = extractDocumentTokens(withoutImages, documentDir);
-    return String(cleanedText || '').trim();
+    let text = String(cleanedText || '').trim();
+    if (memoryCaptureMaxChars > 0 && text.length > memoryCaptureMaxChars) {
+      text = `${text.slice(0, memoryCaptureMaxChars - 1)}\u2026`;
+    }
+    return text;
   }
 
   function maybeAutoCurateMemory() {
@@ -56,19 +69,25 @@ function createMemoryService(options) {
   }
 
   async function buildBootstrapContext(contextOptions = {}) {
-    const { threadKey } = contextOptions;
+    const { threadKey, compact } = contextOptions;
     const soul = await readSoul();
     const tools = await readTools();
     const memory = await readMemory();
     const lines = [];
     if (soul.exists && soul.content) {
+      const content = compact
+        ? truncateForCompact(soul.content, COMPACT_BOOTSTRAP_MAX_CHARS)
+        : soul.content;
       lines.push('[SOUL]');
-      lines.push(soul.content);
+      lines.push(content);
       lines.push('[/SOUL]');
     }
     if (tools.exists && tools.content) {
+      const content = compact
+        ? truncateForCompact(tools.content, COMPACT_BOOTSTRAP_MAX_CHARS)
+        : tools.content;
       lines.push('[TOOLS]');
-      lines.push(tools.content);
+      lines.push(content);
       lines.push('[/TOOLS]');
     }
     if (memory.exists && memory.content) {

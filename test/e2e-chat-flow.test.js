@@ -233,11 +233,12 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   assert.equal(persistedThreadId, 'thread-1');
 });
 
-test('thread rotation resets threadId after N turns and re-injects bootstrap', async () => {
+test('thread rotation resets threadId after N turns and re-injects compact bootstrap', async () => {
   const threads = new Map();
   const threadTurns = new Map();
   const buildCalls = [];
   const promptHistory = [];
+  const bootstrapCalls = [];
   let persistThreadsCalled = 0;
   let turnCounter = 0;
 
@@ -258,7 +259,10 @@ test('thread rotation resets threadId after N turns and re-injects bootstrap', a
   const agentRunner = createAgentRunner({
     agentMaxBuffer: 1024 * 1024,
     agentTimeoutMs: 5000,
-    buildBootstrapContext: async ({ threadKey }) => `BOOTSTRAP(${threadKey})`,
+    buildBootstrapContext: async (opts) => {
+      bootstrapCalls.push(opts);
+      return `BOOTSTRAP(${opts.threadKey}${opts.compact ? ',compact' : ''})`;
+    },
     buildMemoryRetrievalContext: async () => 'RETRIEVAL',
     buildPrompt: (text) => text,
     documentDir: '/tmp',
@@ -285,20 +289,23 @@ test('thread rotation resets threadId after N turns and re-injects bootstrap', a
     defaultTimeZone: 'UTC',
   });
 
-  // Turn 1: new thread — should include bootstrap
+  // Turn 1: new thread — should include full bootstrap (compact=false)
   await agentRunner.runAgentForChat(100, 'message one');
   assert.match(promptHistory[0], /BOOTSTRAP\(/);
   assert.equal(buildCalls[0].threadId, undefined);
+  assert.equal(bootstrapCalls[0].compact, false);
 
   // Turn 2: has threadId — no bootstrap
   await agentRunner.runAgentForChat(100, 'message two');
   assert.doesNotMatch(promptHistory[1], /BOOTSTRAP\(/);
   assert.ok(buildCalls[1].threadId);
 
-  // Turn 3: turnCount >= 3 triggers rotation — thread deleted, bootstrap re-injected
+  // Turn 3: turnCount >= 3 triggers rotation — thread deleted, compact bootstrap re-injected
   await agentRunner.runAgentForChat(100, 'message three');
   assert.match(promptHistory[2], /BOOTSTRAP\(/);
+  assert.match(promptHistory[2], /compact/);
   assert.equal(buildCalls[2].threadId, undefined);
+  assert.equal(bootstrapCalls[1].compact, true);
 
   // Turn 4 (post-rotation): new thread established, continues without bootstrap
   await agentRunner.runAgentForChat(100, 'message four');
@@ -366,4 +373,152 @@ test('trivial messages (< 6 chars) skip memory retrieval', async () => {
   await agentRunner.runAgentForChat(200, 'cuéntame más sobre el proyecto');
   assert.equal(retrievalCalls.length, 1, 'Retrieval called for normal message');
   assert.equal(retrievalCalls[0], 'cuéntame más sobre el proyecto');
+});
+
+test('retrieval cache avoids redundant calls for same query within TTL', async () => {
+  const threads = new Map();
+  const threadTurns = new Map();
+  const retrievalCalls = [];
+
+  const agent = {
+    id: 'fake',
+    needsPty: false,
+    mergeStderr: false,
+    buildCommand(options) {
+      return `echo ${options.promptExpression}`;
+    },
+    parseOutput() {
+      return { text: 'ok', threadId: 'thread-1', sawJson: true };
+    },
+  };
+
+  const agentRunner = createAgentRunner({
+    agentMaxBuffer: 1024 * 1024,
+    agentTimeoutMs: 5000,
+    buildBootstrapContext: async () => 'BOOTSTRAP',
+    buildMemoryRetrievalContext: async (opts) => {
+      retrievalCalls.push(opts.query);
+      return 'RETRIEVAL';
+    },
+    buildPrompt: (text) => text,
+    documentDir: '/tmp',
+    execLocal: async () => 'output',
+    fileInstructionsEvery: 100,
+    getAgent: () => agent,
+    getAgentLabel: () => 'Fake',
+    getGlobalAgent: () => 'fake',
+    getGlobalModels: () => ({}),
+    getGlobalThinking: () => undefined,
+    getThreads: () => threads,
+    imageDir: '/tmp',
+    memoryRetrievalLimit: 3,
+    persistThreads: async () => {},
+    prefixTextWithTimestamp: (v) => v,
+    resolveEffectiveAgentId: () => 'fake',
+    resolveThreadId,
+    threadRotationTurns: 0,
+    threadTurns,
+    wrapCommandWithPty: (v) => v,
+    defaultTimeZone: 'UTC',
+  });
+
+  // First call — triggers retrieval
+  await agentRunner.runAgentForChat(300, 'how does the memory system work?');
+  assert.equal(retrievalCalls.length, 1);
+
+  // Same query, same chat — should be cached
+  await agentRunner.runAgentForChat(300, 'how does the memory system work?');
+  assert.equal(retrievalCalls.length, 1, 'Second identical query should hit cache');
+
+  // Different query — triggers new retrieval
+  await agentRunner.runAgentForChat(300, 'explain the cron scheduler');
+  assert.equal(retrievalCalls.length, 2, 'Different query should trigger retrieval');
+
+  // Same query but different chat — triggers new retrieval (different cache key)
+  await agentRunner.runAgentForChat(400, 'how does the memory system work?');
+  assert.equal(retrievalCalls.length, 3, 'Same query from different chat should trigger retrieval');
+});
+
+test('compact bootstrap truncates soul and tools content', async () => {
+  const { createMemoryService } = require('../src/services/memory');
+
+  const longSoul = 'S'.repeat(2000);
+  const longTools = 'T'.repeat(2000);
+  const shortMemory = 'Memory content here';
+
+  const service = createMemoryService({
+    appendMemoryEvent: async () => {},
+    buildThreadBootstrap: async () => '',
+    configPath: '/tmp/test-config.json',
+    curateMemory: async () => ({}),
+    documentDir: '/tmp',
+    extractDocumentTokens: (text) => ({ cleanedText: text }),
+    extractImageTokens: (text) => ({ cleanedText: text }),
+    imageDir: '/tmp',
+    memoryCaptureMaxChars: 500,
+    memoryCurateEvery: 20,
+    memoryPath: '/tmp/memory.md',
+    persistMemory: async (task) => task(),
+    readMemory: async () => ({ exists: true, content: shortMemory }),
+    readSoul: async () => ({ exists: true, content: longSoul }),
+    readTools: async () => ({ exists: true, content: longTools }),
+    soulPath: '/tmp/soul.md',
+    toolsPath: '/tmp/tools.md',
+    getMemoryEventsSinceCurate: () => 0,
+    setMemoryEventsSinceCurate: () => {},
+  });
+
+  // Full bootstrap should include all content
+  const full = await service.buildBootstrapContext({ compact: false });
+  assert.ok(full.includes(longSoul), 'Full bootstrap includes entire soul');
+  assert.ok(full.includes(longTools), 'Full bootstrap includes entire tools');
+
+  // Compact bootstrap should truncate soul and tools
+  const compact = await service.buildBootstrapContext({ compact: true });
+  assert.ok(!compact.includes(longSoul), 'Compact bootstrap truncates soul');
+  assert.ok(!compact.includes(longTools), 'Compact bootstrap truncates tools');
+  assert.ok(compact.includes('[SOUL]'), 'Compact bootstrap still has SOUL tags');
+  assert.ok(compact.includes('[TOOLS]'), 'Compact bootstrap still has TOOLS tags');
+  assert.ok(compact.includes(shortMemory), 'Compact bootstrap keeps full memory');
+
+  // Verify truncation size: ~800 chars + ellipsis
+  const soulMatch = compact.match(/\[SOUL\]\n([\s\S]*?)\n\[\/SOUL\]/);
+  assert.ok(soulMatch, 'Soul section found in compact bootstrap');
+  assert.ok(soulMatch[1].length <= 800, `Soul truncated to <=800 chars (got ${soulMatch[1].length})`);
+});
+
+test('extractMemoryText truncates to memoryCaptureMaxChars', () => {
+  const { createMemoryService } = require('../src/services/memory');
+
+  const service = createMemoryService({
+    appendMemoryEvent: async () => {},
+    buildThreadBootstrap: async () => '',
+    configPath: '/tmp/test-config.json',
+    curateMemory: async () => ({}),
+    documentDir: '/tmp',
+    extractDocumentTokens: (text) => ({ cleanedText: text }),
+    extractImageTokens: (text) => ({ cleanedText: text }),
+    imageDir: '/tmp',
+    memoryCaptureMaxChars: 100,
+    memoryCurateEvery: 20,
+    memoryPath: '/tmp/memory.md',
+    persistMemory: async (task) => task(),
+    readMemory: async () => ({ exists: false }),
+    readSoul: async () => ({ exists: false }),
+    readTools: async () => ({ exists: false }),
+    soulPath: '/tmp/soul.md',
+    toolsPath: '/tmp/tools.md',
+    getMemoryEventsSinceCurate: () => 0,
+    setMemoryEventsSinceCurate: () => {},
+  });
+
+  // Short text should pass through unchanged
+  const short = service.extractMemoryText('Hello world');
+  assert.equal(short, 'Hello world');
+
+  // Long text should be truncated to ~100 chars
+  const longText = 'A'.repeat(500);
+  const truncated = service.extractMemoryText(longText);
+  assert.ok(truncated.length <= 100, `Truncated to 100 chars (got ${truncated.length})`);
+  assert.ok(truncated.endsWith('\u2026'), 'Truncated text ends with ellipsis');
 });

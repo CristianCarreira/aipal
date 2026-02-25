@@ -66,9 +66,10 @@ Curated memory state is stored in:
 Environment knobs:
 - `AIPAL_MEMORY_CURATE_EVERY`: auto-curate memory after N new captured events (default: `20`).
 - `AIPAL_MEMORY_RETRIEVAL_LIMIT`: maximum number of retrieved memory lines injected per request (default: `5`).
-- `AIPAL_THREAD_ROTATION_TURNS`: rotate (reset) the agent thread after N turns to limit accumulated context. `0` = disabled (default). Recommended: `20`-`30` for long conversations. When the thread rotates, the bot re-injects bootstrap context (soul, tools, memory) so the agent stays informed.
+- `AIPAL_THREAD_ROTATION_TURNS`: rotate (reset) the agent thread after N turns to limit accumulated context. `0` = disabled (default). Recommended: `20`-`30` for long conversations. When the thread rotates, the bot re-injects a **compact** bootstrap (soul and tools truncated to ~800 chars) so the agent stays informed without consuming the full token budget.
+- `AIPAL_MEMORY_CAPTURE_MAX_CHARS`: maximum characters stored per assistant response in memory capture (default: `500`). Lower values reduce the tokens injected via thread bootstrap and retrieval context in subsequent interactions.
 
-Retrieval currently mixes scopes (`same-thread`, `same-topic`, `same-chat`, `global`) so prompts can include both local continuity and useful cross-topic memory when available.
+Retrieval uses a short-lived cache (60s TTL) so rapid sequential messages on the same topic reuse the previous retrieval result instead of re-querying. Scopes mix (`same-thread`, `same-topic`, `same-chat`, `global`) for both local continuity and cross-topic memory.
 
 ## Soul file (optional)
 If `soul.md` exists alongside `config.json`, its contents are injected first during bootstrap (before `tools.md` and `memory.md`).
