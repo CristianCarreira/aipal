@@ -14,6 +14,7 @@ function registerMediaHandlers(options) {
     getDocumentPayload,
     getImagePayload,
     getTopicId,
+    isBudgetExhausted,
     imageDir,
     enqueue,
     replyWithError,
@@ -76,6 +77,15 @@ function registerMediaHandlers(options) {
     if (!payload) return next();
 
     enqueue(topicKey, async () => {
+      if (isBudgetExhausted && isBudgetExhausted()) {
+        const extra = topicId ? { message_thread_id: topicId } : {};
+        await bot.telegram.sendMessage(
+          chatId,
+          'Daily token budget exhausted. Messages will resume tomorrow. Use /usage for details.',
+          extra
+        ).catch(() => {});
+        return;
+      }
       const stopTyping = startTyping(ctx);
       const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
       const memoryThreadKey = buildMemoryThreadKey(
@@ -135,6 +145,15 @@ function registerMediaHandlers(options) {
     if (!payload) return next();
 
     enqueue(topicKey, async () => {
+      if (isBudgetExhausted && isBudgetExhausted()) {
+        const extra = topicId ? { message_thread_id: topicId } : {};
+        await bot.telegram.sendMessage(
+          chatId,
+          'Daily token budget exhausted. Messages will resume tomorrow. Use /usage for details.',
+          extra
+        ).catch(() => {});
+        return;
+      }
       const stopTyping = startTyping(ctx);
       const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
       const memoryThreadKey = buildMemoryThreadKey(
@@ -179,6 +198,15 @@ function registerMediaHandlers(options) {
     if (!payload) return;
 
     enqueue(topicKey, async () => {
+      if (isBudgetExhausted && isBudgetExhausted()) {
+        const extra = topicId ? { message_thread_id: topicId } : {};
+        await bot.telegram.sendMessage(
+          chatId,
+          'Daily token budget exhausted. Messages will resume tomorrow. Use /usage for details.',
+          extra
+        ).catch(() => {});
+        return;
+      }
       const stopTyping = startTyping(ctx);
       const effectiveAgentId = resolveEffectiveAgentId(chatId, topicId);
       const memoryThreadKey = buildMemoryThreadKey(
