@@ -124,8 +124,11 @@ function registerCronCommand(options) {
         const disabledLabel = job.enabled
           ? ''
           : ' (disabled in schedule, manual run forced)';
+        const promptPreview = payload.prompt.length > 120
+          ? `${payload.prompt.slice(0, 120)}…`
+          : payload.prompt;
         await ctx.reply(
-          `Running cron "${job.id}" now -> chat ${payload.chatId}${topicLabel}${disabledLabel}`
+          `Running cron "${job.id}" now${topicLabel}${disabledLabel}\n${promptPreview}`
         );
         await handleCronTrigger(payload.chatId, payload.prompt, payload.options);
         await ctx.reply(`Cron "${job.id}" finished.`);
