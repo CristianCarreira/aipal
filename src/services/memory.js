@@ -1,4 +1,4 @@
-const COMPACT_BOOTSTRAP_MAX_CHARS = 800;
+const COMPACT_BOOTSTRAP_MAX_CHARS = 500;
 
 function truncateForCompact(text, maxChars) {
   const trimmed = String(text || '').trim();

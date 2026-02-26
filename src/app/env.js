@@ -37,7 +37,7 @@ const AGENT_MAX_BUFFER = readNumberEnv(
 );
 const FILE_INSTRUCTIONS_EVERY = readNumberEnv(
   process.env.AIPAL_FILE_INSTRUCTIONS_EVERY,
-  10
+  15
 );
 const MEMORY_CURATE_EVERY = readNumberEnv(
   process.env.AIPAL_MEMORY_CURATE_EVERY,
@@ -45,7 +45,7 @@ const MEMORY_CURATE_EVERY = readNumberEnv(
 );
 const MEMORY_RETRIEVAL_LIMIT = readNumberEnv(
   process.env.AIPAL_MEMORY_RETRIEVAL_LIMIT,
-  5
+  3
 );
 const THREAD_ROTATION_TURNS = readNumberEnv(
   process.env.AIPAL_THREAD_ROTATION_TURNS,
@@ -53,11 +53,11 @@ const THREAD_ROTATION_TURNS = readNumberEnv(
 );
 const THREAD_MAX_CONTEXT_CHARS = readNumberEnv(
   process.env.AIPAL_THREAD_MAX_CONTEXT_CHARS,
-  40000  // ~10K tokens
+  30000  // ~7.5K tokens
 );
 const MEMORY_CAPTURE_MAX_CHARS = readNumberEnv(
   process.env.AIPAL_MEMORY_CAPTURE_MAX_CHARS,
-  500
+  300
 );
 const TOKEN_BUDGET_DAILY = readNumberEnv(
   process.env.AIPAL_TOKEN_BUDGET_DAILY,

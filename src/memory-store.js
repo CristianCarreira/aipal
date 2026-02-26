@@ -19,10 +19,10 @@ const AUTO_MEMORY_START = '<!-- aipal:auto-memory:start -->';
 const AUTO_MEMORY_END = '<!-- aipal:auto-memory:end -->';
 
 const MAX_EVENT_TEXT_LENGTH = 2000;
-const DEFAULT_CURATION_MAX_BYTES = 8192;
-const DEFAULT_THREAD_BOOTSTRAP_LIMIT = 5;
+const DEFAULT_CURATION_MAX_BYTES = 4096;
+const DEFAULT_THREAD_BOOTSTRAP_LIMIT = 3;
 const DEFAULT_TAIL_LIMIT = 10;
-const DEFAULT_RECENT_ACTIVITY_LIMIT = 12;
+const DEFAULT_RECENT_ACTIVITY_LIMIT = 8;
 const DEFAULT_MAX_EVENT_AGE_DAYS = 60;
 
 const fileWriteQueues = new Map();
@@ -215,7 +215,7 @@ function buildAutoMemorySection(events, options = {}) {
     .slice(0, maxRecentActivity)
     .reverse();
   for (const event of recent) {
-    const text = truncateText(event.text, 220);
+    const text = truncateText(event.text, 150);
     const topic = event.topicId ? `topic:${event.topicId}` : 'root';
     const who = event.role === 'assistant' ? 'assistant' : 'user';
     recentActivity.push(
@@ -340,7 +340,7 @@ async function buildThreadBootstrap(threadKey, options = {}) {
   const lines = ['Recent thread memory:'];
   for (const event of recent) {
     const who = event.role === 'assistant' ? 'assistant' : 'user';
-    lines.push(`- [${toDisplayTime(event.createdAt)}] ${who}: ${truncateText(event.text, 180)}`);
+    lines.push(`- [${toDisplayTime(event.createdAt)}] ${who}: ${truncateText(event.text, 120)}`);
   }
   return lines.join('\n');
 }

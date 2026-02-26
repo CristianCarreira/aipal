@@ -81,8 +81,8 @@ test('buildPrompt includes image hints', () => {
     docDir
   );
   assert.match(prompt, /User sent image file/);
-  assert.match(prompt, /\[\[image:\/absolute\/path\]\]/);
-  assert.match(prompt, /\[\[document:\/absolute\/path\]\]/);
+  assert.match(prompt, /\[\[image:\/path\]\]/);
+  assert.match(prompt, /\[\[document:\/path\]\]/);
 });
 
 test('buildPrompt includes slash context', () => {

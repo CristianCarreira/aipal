@@ -297,7 +297,7 @@ function buildPrompt(
   const lines = [];
   if (includeStyleInstructions) {
     lines.push(
-      'Output style for Telegram: reply only with the final user-facing answer. Do not include reasoning, chain-of-thought, planning steps, or internal process.'
+      'Reply with only the final answer. No reasoning or planning steps.'
     );
   }
   const context = (scriptContext || '').trim();
@@ -324,13 +324,8 @@ function buildPrompt(
   }
   if (includeFileInstructions) {
     lines.push(
-      `If you generate an image, save it under ${imageDir} and reply with [[image:/absolute/path]] so the bot can send it.`
+      `Images: save under ${imageDir}, reply [[image:/path]]. Documents: save under ${documentDir || imageDir}, reply [[document:/path]].`
     );
-    if (documentDir) {
-      lines.push(
-        `If you generate a document (or need to send a file), save it under ${documentDir} and reply with [[document:/absolute/path]] so the bot can send it.`
-      );
-    }
   }
   return lines.join('\n');
 }

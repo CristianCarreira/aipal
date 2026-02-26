@@ -196,7 +196,7 @@ function createAgentRunner(options) {
         ? `${bootstrap}\n\n${promptWithContext}`
         : bootstrap;
     }
-    if (prompt.trim().length >= 6) {
+    if (prompt.trim().length >= 15) {
       const cacheKey = `${chatId}:${topicId || ''}:${prompt.trim().slice(0, 200)}`;
       let retrievalContext = getCachedRetrieval(cacheKey);
       if (retrievalContext === undefined) {

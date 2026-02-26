@@ -7,7 +7,7 @@ const { queryIndexedEvents } = require('./memory-index');
 
 const DEFAULT_LIMIT = 12;
 const DEFAULT_MAX_FILES = 200;
-const DEFAULT_SNIPPET_LENGTH = 220;
+const DEFAULT_SNIPPET_LENGTH = 150;
 const DIVERSITY_SCOPE_ORDER = [
   'same-thread',
   'same-topic',
@@ -186,7 +186,7 @@ async function readRecentThreadEvents(maxFiles = DEFAULT_MAX_FILES) {
   for (const item of selected) {
     const raw = await fs.readFile(item.filePath, 'utf8');
     for (const event of parseJsonl(raw)) {
-      const text = truncate(event.text, 1000);
+      const text = truncate(event.text, 500);
       if (!text) continue;
       all.push({
         ...event,
@@ -335,13 +335,11 @@ function getEventIdentity(event) {
 async function buildMemoryRetrievalContext(options = {}) {
   const hits = await searchMemory(options);
   if (!hits.length) return '';
-  const lines = ['Relevant memory retrieved:'];
+  const lines = ['Memory:'];
   for (const hit of hits) {
-    const who = hit.role === 'assistant' ? 'assistant' : 'user';
+    const who = hit.role === 'assistant' ? 'A' : 'U';
     lines.push(
-      `- [${toDisplayTimestamp(hit.createdAt)}] (${hit.scope}, ${who}) ${truncate(
-        hit.text
-      )}`
+      `- ${who} ${truncate(hit.text)}`
     );
   }
   return lines.join('\n');

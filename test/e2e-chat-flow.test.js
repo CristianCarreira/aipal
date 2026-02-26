@@ -197,7 +197,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   }
 
   // Send first message — main queue finishes fast, agent work dispatched
-  await sendText('Hola equipo');
+  await sendText('Hola equipo, empezamos');
 
   // Send second message immediately — main queue is free, accepts it
   await sendText('¿Seguimos por el mismo hilo?');
@@ -218,7 +218,7 @@ test('e2e: text handler runs bootstrap + agent + telegram reply with thread cont
   const secondPrompt = promptHistory[1];
   assert.match(firstPrompt, /BOOTSTRAP\(12345:root:fake\)/);
   assert.match(firstPrompt, /MEMORY_CONTEXT/);
-  assert.match(firstPrompt, /Hola equipo/);
+  assert.match(firstPrompt, /Hola equipo, empezamos/);
   assert.match(secondPrompt, /\u00bfSeguimos por el mismo hilo\?/);
   assert.doesNotMatch(secondPrompt, /BOOTSTRAP\(/);
 
@@ -817,21 +817,21 @@ test('style instructions only included on new threads and periodic refresh', asy
 
   // Turn 1: new thread — should include style instructions
   await agentRunner.runAgentForChat(900, 'hello world test');
-  assert.match(promptHistory[0], /Output style for Telegram/, 'Turn 1 has style instructions');
-  assert.match(promptHistory[0], /If you generate an image/, 'Turn 1 has file instructions');
+  assert.match(promptHistory[0], /Reply with only the final answer/, 'Turn 1 has style instructions');
+  assert.match(promptHistory[0], /\[\[image:\/path\]\]/, 'Turn 1 has file instructions');
 
   // Turns 2-4: continuing thread — should NOT include style/file instructions
   for (let i = 0; i < 3; i++) {
     await agentRunner.runAgentForChat(900, `message number ${i + 2} here`);
   }
-  assert.doesNotMatch(promptHistory[1], /Output style for Telegram/, 'Turn 2 skips style');
-  assert.doesNotMatch(promptHistory[2], /Output style for Telegram/, 'Turn 3 skips style');
-  assert.doesNotMatch(promptHistory[3], /Output style for Telegram/, 'Turn 4 skips style');
+  assert.doesNotMatch(promptHistory[1], /Reply with only the final answer/, 'Turn 2 skips style');
+  assert.doesNotMatch(promptHistory[2], /Reply with only the final answer/, 'Turn 3 skips style');
+  assert.doesNotMatch(promptHistory[3], /Reply with only the final answer/, 'Turn 4 skips style');
 
   // Turn 5: fileInstructionsEvery=5, so should re-include
   await agentRunner.runAgentForChat(900, 'message five for test');
-  assert.match(promptHistory[4], /Output style for Telegram/, 'Turn 5 refreshes style');
-  assert.match(promptHistory[4], /If you generate an image/, 'Turn 5 refreshes file instructions');
+  assert.match(promptHistory[4], /Reply with only the final answer/, 'Turn 5 refreshes style');
+  assert.match(promptHistory[4], /\[\[image:\/path\]\]/, 'Turn 5 refreshes file instructions');
 });
 
 test('context size limit forces thread rotation before turn limit', async () => {
