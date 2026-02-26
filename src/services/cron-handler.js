@@ -12,7 +12,7 @@ function createCronHandler(options) {
   } = options;
 
   return async function handleCronTrigger(chatId, prompt, triggerOptions = {}) {
-    const { jobId, agent, model, topicId } = triggerOptions;
+    const { jobId, agent, model, topicId, cwd } = triggerOptions;
     if (cronBudgetGatePct > 0 && getBudgetPct) {
       const pct = getBudgetPct();
       if (pct !== null && pct >= cronBudgetGatePct) {
@@ -45,6 +45,7 @@ function createCronHandler(options) {
         agentId: agent,
         model,
         topicId,
+        cwd,
         source: 'cron',
       });
       await captureMemoryEvent({

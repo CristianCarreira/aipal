@@ -132,7 +132,7 @@ function createAgentRunner(options) {
   }
 
   async function runAgentForChat(chatId, prompt, runOptions = {}) {
-    const { topicId, agentId: overrideAgentId, model: overrideModel, imagePaths, scriptContext, documentPaths, source: runSource } =
+    const { topicId, agentId: overrideAgentId, model: overrideModel, imagePaths, scriptContext, documentPaths, source: runSource, cwd } =
       runOptions;
     const source = runSource || 'chat';
     const effectiveAgentId = resolveEffectiveAgentId(
@@ -268,6 +268,7 @@ function createAgentRunner(options) {
         timeout: agentTimeoutMs,
         maxBuffer: agentMaxBuffer,
         env: execEnv,
+        cwd,
       });
     } catch (err) {
       execError = err;
@@ -304,6 +305,7 @@ function createAgentRunner(options) {
         const listOutput = await execLocal('bash', ['-lc', listCommandToRun], {
           timeout: agentTimeoutMs,
           maxBuffer: agentMaxBuffer,
+          cwd,
         });
         if (typeof agent.parseSessionList === 'function') {
           const resolved = agent.parseSessionList(listOutput);

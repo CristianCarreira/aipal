@@ -35,6 +35,7 @@ function buildCronTriggerPayload(job, defaultChatId) {
       agent: job.agent,
       model: job.model,
       topicId: job.topicId,
+      cwd: job.cwd,
     },
   };
 }

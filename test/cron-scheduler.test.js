@@ -120,6 +120,34 @@ test('buildCronTriggerPayload mirrors scheduler delivery fields', async () => {
       agent: 'codex',
       model: undefined,
       topicId: 2801,
+      cwd: undefined,
+    },
+  });
+});
+
+test('buildCronTriggerPayload includes cwd when present', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-cron-'));
+  const { buildCronTriggerPayload } = loadCronScheduler(dir);
+
+  const payload = buildCronTriggerPayload(
+    {
+      id: 'reviewer',
+      prompt: 'review code',
+      agent: 'gemini',
+      cwd: '/home/user/my-repo',
+    },
+    123456
+  );
+
+  assert.deepEqual(payload, {
+    chatId: 123456,
+    prompt: 'review code',
+    options: {
+      jobId: 'reviewer',
+      agent: 'gemini',
+      model: undefined,
+      topicId: undefined,
+      cwd: '/home/user/my-repo',
     },
   });
 });
@@ -146,6 +174,7 @@ test('buildCronTriggerPayload propagates model when present', async () => {
       agent: 'gemini',
       model: 'gemini-2.5-flash',
       topicId: undefined,
+      cwd: undefined,
     },
   });
 });
