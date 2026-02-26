@@ -132,7 +132,7 @@ function createAgentRunner(options) {
   }
 
   async function runAgentForChat(chatId, prompt, runOptions = {}) {
-    const { topicId, agentId: overrideAgentId, imagePaths, scriptContext, documentPaths, source: runSource } =
+    const { topicId, agentId: overrideAgentId, model: overrideModel, imagePaths, scriptContext, documentPaths, source: runSource } =
       runOptions;
     const source = runSource || 'chat';
     const effectiveAgentId = resolveEffectiveAgentId(
@@ -234,7 +234,7 @@ function createAgentRunner(options) {
       threadId,
       threadIdExpression,
       thinking,
-      model: getGlobalModels()[effectiveAgentId],
+      model: overrideModel || getGlobalModels()[effectiveAgentId],
     });
     let commandToRun = agentCmd;
     const execEnv = {

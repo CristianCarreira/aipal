@@ -110,6 +110,32 @@ test('buildAgentCommand builds gemini headless command', () => {
   assert.match(command, /--resume session-3/);
 });
 
+test('buildAgentCommand appends model flag for claude', () => {
+  const agent = getAgent('claude');
+  const command = agent.buildCommand({ prompt: 'hello', model: 'sonnet' });
+  assert.match(command, /^claude /);
+  assert.match(command, /--model sonnet/);
+});
+
+test('buildAgentCommand omits model flag for claude when not provided', () => {
+  const agent = getAgent('claude');
+  const command = agent.buildCommand({ prompt: 'hello' });
+  assert.doesNotMatch(command, /--model/);
+});
+
+test('buildAgentCommand appends model flag for gemini', () => {
+  const agent = getAgent('gemini');
+  const command = agent.buildCommand({ prompt: 'hello', model: 'gemini-2.5-flash' });
+  assert.match(command, /^gemini /);
+  assert.match(command, /--model gemini-2.5-flash/);
+});
+
+test('buildAgentCommand omits model flag for gemini when not provided', () => {
+  const agent = getAgent('gemini');
+  const command = agent.buildCommand({ prompt: 'hello' });
+  assert.doesNotMatch(command, /--model/);
+});
+
 test('parseAgentOutput extracts gemini response', () => {
   const agent = getAgent('gemini');
   const output = JSON.stringify({ response: 'hola' });

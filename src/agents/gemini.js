@@ -12,9 +12,12 @@ function safeJsonParse(value) {
   }
 }
 
-function buildCommand({ prompt, promptExpression, threadId }) {
+function buildCommand({ prompt, promptExpression, threadId, model }) {
   const promptValue = resolvePromptValue(prompt, promptExpression);
   const args = ['-p', promptValue, '--output-format', GEMINI_OUTPUT_FORMAT, '--yolo'];
+  if (model) {
+    args.push('--model', model);
+  }
   if (threadId) {
     args.push('--resume', threadId);
   }

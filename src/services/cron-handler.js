@@ -12,7 +12,7 @@ function createCronHandler(options) {
   } = options;
 
   return async function handleCronTrigger(chatId, prompt, triggerOptions = {}) {
-    const { jobId, agent, topicId } = triggerOptions;
+    const { jobId, agent, model, topicId } = triggerOptions;
     if (cronBudgetGatePct > 0 && getBudgetPct) {
       const pct = getBudgetPct();
       if (pct !== null && pct >= cronBudgetGatePct) {
@@ -43,6 +43,7 @@ function createCronHandler(options) {
       });
       const response = await runAgentForChat(chatId, prompt, {
         agentId: agent,
+        model,
         topicId,
         source: 'cron',
       });

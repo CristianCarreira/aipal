@@ -19,7 +19,7 @@ function stripAnsi(value) {
     .replace(/\x1B[@-Z\\-_]/g, '');
 }
 
-function buildCommand({ prompt, promptExpression, threadId, threadIdExpression }) {
+function buildCommand({ prompt, promptExpression, threadId, threadIdExpression, model }) {
   const promptValue = resolvePromptValue(prompt, promptExpression);
   const args = [
     '-p',
@@ -28,6 +28,9 @@ function buildCommand({ prompt, promptExpression, threadId, threadIdExpression }
     CLAUDE_OUTPUT_FORMAT,
     '--dangerously-skip-permissions',
   ];
+  if (model) {
+    args.push('--model', model);
+  }
   if (threadId) {
     args.push('--resume', shellQuote(threadId));
   }

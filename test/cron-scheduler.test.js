@@ -118,7 +118,34 @@ test('buildCronTriggerPayload mirrors scheduler delivery fields', async () => {
     options: {
       jobId: 'nightly-interests',
       agent: 'codex',
+      model: undefined,
       topicId: 2801,
+    },
+  });
+});
+
+test('buildCronTriggerPayload propagates model when present', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-cron-'));
+  const { buildCronTriggerPayload } = loadCronScheduler(dir);
+
+  const payload = buildCronTriggerPayload(
+    {
+      id: 'resumen',
+      prompt: 'Resume noticias',
+      agent: 'gemini',
+      model: 'gemini-2.5-flash',
+    },
+    123456
+  );
+
+  assert.deepEqual(payload, {
+    chatId: 123456,
+    prompt: 'Resume noticias',
+    options: {
+      jobId: 'resumen',
+      agent: 'gemini',
+      model: 'gemini-2.5-flash',
+      topicId: undefined,
     },
   });
 });
