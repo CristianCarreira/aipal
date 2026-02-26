@@ -85,7 +85,7 @@ function createAgentRunner(options) {
     let estimatedOneShotInput = 0;
     if (onTokenUsage) {
       estimatedOneShotInput = Math.ceil(promptText.length / 4);
-      onTokenUsage({ chatId: 'oneshot', inputTokens: estimatedOneShotInput, outputTokens: 0, source: 'oneshot' });
+      onTokenUsage({ chatId: 'oneshot', inputTokens: estimatedOneShotInput, outputTokens: 0, source: 'oneshot', agentId: agent.id });
     }
 
     const startedAt = Date.now();
@@ -122,10 +122,10 @@ function createAgentRunner(options) {
     if (onTokenUsage) {
       if (parsed.usage) {
         const inputCorrection = parsed.usage.inputTokens - estimatedOneShotInput;
-        onTokenUsage({ chatId: 'oneshot', inputTokens: inputCorrection, outputTokens: parsed.usage.outputTokens, source: 'oneshot', costUsd: parsed.costUsd });
+        onTokenUsage({ chatId: 'oneshot', inputTokens: inputCorrection, outputTokens: parsed.usage.outputTokens, source: 'oneshot', costUsd: parsed.costUsd, agentId: agent.id });
       } else {
         const outputTokens = Math.ceil((parsed.text || output || '').length / 4);
-        onTokenUsage({ chatId: 'oneshot', inputTokens: 0, outputTokens, source: 'oneshot' });
+        onTokenUsage({ chatId: 'oneshot', inputTokens: 0, outputTokens, source: 'oneshot', agentId: agent.id });
       }
     }
     return parsed.text || output;
@@ -254,7 +254,7 @@ function createAgentRunner(options) {
     if (onTokenUsage) {
       const accumulated = threadId ? (threadContextChars.get(threadKey) || 0) : 0;
       estimatedInputTokens = Math.ceil((accumulated + finalPrompt.length) / 4);
-      onTokenUsage({ chatId, topicId, inputTokens: estimatedInputTokens, outputTokens: 0, source });
+      onTokenUsage({ chatId, topicId, inputTokens: estimatedInputTokens, outputTokens: 0, source, agentId: agent.id });
     }
 
     const startedAt = Date.now();
@@ -326,11 +326,11 @@ function createAgentRunner(options) {
       if (parsed.usage) {
         // Real token data from CLI — correct the phase-1 estimate
         const inputCorrection = parsed.usage.inputTokens - estimatedInputTokens;
-        onTokenUsage({ chatId, topicId, inputTokens: inputCorrection, outputTokens: parsed.usage.outputTokens, source, costUsd: parsed.costUsd });
+        onTokenUsage({ chatId, topicId, inputTokens: inputCorrection, outputTokens: parsed.usage.outputTokens, source, costUsd: parsed.costUsd, agentId: agent.id });
       } else {
         // Fallback to estimation
         const outputTokens = Math.ceil(responseText.length / 4);
-        onTokenUsage({ chatId, topicId, inputTokens: 0, outputTokens, source });
+        onTokenUsage({ chatId, topicId, inputTokens: 0, outputTokens, source, agentId: agent.id });
       }
     }
     threadContextChars.set(

@@ -84,6 +84,10 @@ const { prefixTextWithTimestamp, DEFAULT_TIME_ZONE } = require('./time-utils');
 const { installLogTimestamps } = require('./app/logging');
 const {
   AGENT_MAX_BUFFER,
+  AGENT_QUOTA_CLAUDE,
+  AGENT_QUOTA_CODEX,
+  AGENT_QUOTA_GEMINI,
+  AGENT_QUOTA_OPENCODE,
   AGENT_TIMEOUT_MS,
   CRON_BUDGET_GATE_PCT,
   DOCUMENT_CLEANUP_INTERVAL_MS,
@@ -193,8 +197,15 @@ function getActiveTasksSummary(chatId) {
 }
 
 const USAGE_PATH = require('path').join(CONFIG_DIR, 'usage.json');
+const agentQuotas = {};
+if (AGENT_QUOTA_CLAUDE > 0) agentQuotas.claude = AGENT_QUOTA_CLAUDE;
+if (AGENT_QUOTA_CODEX > 0) agentQuotas.codex = AGENT_QUOTA_CODEX;
+if (AGENT_QUOTA_GEMINI > 0) agentQuotas.gemini = AGENT_QUOTA_GEMINI;
+if (AGENT_QUOTA_OPENCODE > 0) agentQuotas.opencode = AGENT_QUOTA_OPENCODE;
+
 const tokenTracker = createTokenTracker({
   budgetDaily: TOKEN_BUDGET_DAILY,
+  agentQuotas,
   sendAlert: async ({ chatId, threshold, pct, totalTokens, budgetDaily: budget }) => {
     const alertChatId = Number(cronDefaultChatId || chatId);
     if (!Number.isFinite(alertChatId)) return;

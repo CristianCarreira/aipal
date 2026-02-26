@@ -328,3 +328,75 @@ test('hydrate loads sources from saved state', async () => {
   assert.equal(stats.sources.chat.tokens, 70);
   assert.equal(stats.sources.chat.messages, 1);
 });
+
+test('trackUsage tracks by agentId', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 100, outputTokens: 50, agentId: 'claude' });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 0, outputTokens: 30, agentId: 'claude' });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 80, outputTokens: 40, agentId: 'gemini' });
+
+  const stats = tracker.getUsageStats();
+  assert.ok(stats.agents.claude);
+  assert.equal(stats.agents.claude.tokens, 180);
+  assert.equal(stats.agents.claude.messages, 1);
+  assert.ok(stats.agents.gemini);
+  assert.equal(stats.agents.gemini.tokens, 120);
+  assert.equal(stats.agents.gemini.messages, 1);
+});
+
+test('getUsageStats returns agent quota pct when configured', async () => {
+  const tracker = createTokenTracker({
+    budgetDaily: 0,
+    agentQuotas: { claude: 1000, gemini: 500 },
+  });
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 200, outputTokens: 50, agentId: 'claude' });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 100, outputTokens: 50, agentId: 'gemini' });
+  await tracker.trackUsage({ chatId: '100', inputTokens: 60, outputTokens: 40, agentId: 'codex' });
+
+  const stats = tracker.getUsageStats();
+  assert.equal(stats.agents.claude.quota, 1000);
+  assert.equal(stats.agents.claude.pct, 25);
+  assert.equal(stats.agents.gemini.quota, 500);
+  assert.equal(stats.agents.gemini.pct, 30);
+  assert.equal(stats.agents.codex.quota, 0);
+  assert.equal(stats.agents.codex.pct, null);
+});
+
+test('hydrate loads agents from saved state', async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const savedState = {
+    date: today,
+    chats: { '100': { input: 300, output: 150, messages: 3 } },
+    sources: {},
+    agents: { claude: { input: 200, output: 100, messages: 2 }, gemini: { input: 100, output: 50, messages: 1 } },
+    alertsSent: [],
+  };
+
+  const tracker = createTokenTracker({
+    budgetDaily: 0,
+    agentQuotas: { claude: 1000 },
+    loadUsage: async () => savedState,
+  });
+
+  await tracker.hydrate();
+
+  const stats = tracker.getUsageStats();
+  assert.equal(stats.agents.claude.tokens, 300);
+  assert.equal(stats.agents.claude.pct, 30);
+  assert.equal(stats.agents.gemini.tokens, 150);
+  assert.equal(stats.agents.gemini.pct, null);
+});
+
+test('resetUsage clears agents state', async () => {
+  const tracker = createTokenTracker({ budgetDaily: 0 });
+
+  await tracker.trackUsage({ chatId: '100', inputTokens: 100, outputTokens: 50, agentId: 'claude' });
+  assert.equal(tracker.getUsageStats().agents.claude.tokens, 150);
+
+  tracker.resetUsage();
+
+  const stats = tracker.getUsageStats();
+  assert.deepEqual(stats.agents, {});
+});

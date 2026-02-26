@@ -18,7 +18,7 @@ function registerUsageCommand(options) {
 
     const lines = [
       `Token usage (${stats.date}):`,
-      `  Estimated: ${formatNumber(stats.totalTokens)} tokens (input: ${formatNumber(stats.totalInput)} / output: ${formatNumber(stats.totalOutput)})`,
+      `  Estimated: ${formatNumber(stats.totalTokens)} tokens (in: ${formatNumber(stats.totalInput)} / out: ${formatNumber(stats.totalOutput)})`,
       `  Messages: ${stats.totalMessages}`,
     ];
 
@@ -32,15 +32,28 @@ function registerUsageCommand(options) {
       lines.push(`  Breakdown: ${srcParts.join(' | ')}`);
     }
 
-    if (stats.totalCostUsd > 0) {
-      lines.push(`  Cost: $${stats.totalCostUsd.toFixed(4)}`);
-    }
-
     if (stats.budgetDaily > 0 && stats.pct != null) {
       lines.push(
         `  Budget: ${formatNumber(stats.totalTokens)} / ${formatNumber(stats.budgetDaily)} (${stats.pct}%)`
       );
       lines.push(`  ${buildProgressBar(stats.pct)} ${stats.pct}%`);
+    }
+
+    const agentEntries = Object.entries(stats.agents || {});
+    if (agentEntries.length > 0) {
+      lines.push('');
+      lines.push('Per agent:');
+      for (const [aid, data] of agentEntries) {
+        const tokStr = formatNumber(data.tokens);
+        if (data.quota > 0 && data.pct != null) {
+          lines.push(
+            `  ${aid}: ${tokStr} / ${formatNumber(data.quota)} tokens (${data.pct}%)`
+          );
+          lines.push(`  ${buildProgressBar(data.pct)} ${data.pct}%`);
+        } else {
+          lines.push(`  ${aid}: ${tokStr} tokens (${data.messages} msgs)`);
+        }
+      }
     }
 
     if (stats.chat) {

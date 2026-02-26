@@ -29,7 +29,7 @@ function buildCommand({ prompt, promptExpression, threadId, threadIdExpression, 
     '--dangerously-skip-permissions',
   ];
   if (model) {
-    args.push('--model', model);
+    args.push('--model', shellQuote(model));
   }
   if (threadId) {
     args.push('--resume', shellQuote(threadId));

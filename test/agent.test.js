@@ -114,7 +114,7 @@ test('buildAgentCommand appends model flag for claude', () => {
   const agent = getAgent('claude');
   const command = agent.buildCommand({ prompt: 'hello', model: 'sonnet' });
   assert.match(command, /^claude /);
-  assert.match(command, /--model sonnet/);
+  assert.match(command, /--model 'sonnet'/);
 });
 
 test('buildAgentCommand omits model flag for claude when not provided', () => {
@@ -145,6 +145,72 @@ test('parseAgentOutput extracts gemini response', () => {
   assert.equal(parsed.sawJson, true);
 });
 
+test('gemini parseOutput extracts session_id from JSON', () => {
+  const agent = getAgent('gemini');
+  const output = JSON.stringify({ response: 'hi', session_id: 'sess-abc-123' });
+  const parsed = agent.parseOutput(output);
+  assert.equal(parsed.threadId, 'sess-abc-123');
+  assert.equal(parsed.text, 'hi');
+});
+
+test('gemini parseOutput extracts usage from stats.models', () => {
+  const agent = getAgent('gemini');
+  const payload = {
+    response: 'Hello',
+    session_id: 'sess-1',
+    stats: {
+      models: {
+        'gemini-2.5-pro': {
+          tokens: {
+            input: 850,
+            prompt: 1200,
+            candidates: 340,
+            total: 1540,
+            cached: 350,
+            thoughts: 120,
+            tool: 45,
+          },
+        },
+      },
+    },
+  };
+  const parsed = agent.parseOutput(JSON.stringify(payload));
+  assert.equal(parsed.text, 'Hello');
+  assert.equal(parsed.threadId, 'sess-1');
+  assert.ok(parsed.usage);
+  assert.equal(parsed.usage.inputTokens, 1200);
+  assert.equal(parsed.usage.outputTokens, 340);
+  assert.equal(parsed.usage.cachedTokens, 350);
+});
+
+test('gemini parseOutput aggregates tokens across multiple models', () => {
+  const agent = getAgent('gemini');
+  const payload = {
+    response: 'result',
+    stats: {
+      models: {
+        'gemini-2.5-pro': {
+          tokens: { prompt: 500, candidates: 100, cached: 50 },
+        },
+        'gemini-2.5-flash': {
+          tokens: { prompt: 300, candidates: 80, cached: 20 },
+        },
+      },
+    },
+  };
+  const parsed = agent.parseOutput(JSON.stringify(payload));
+  assert.ok(parsed.usage);
+  assert.equal(parsed.usage.inputTokens, 800);
+  assert.equal(parsed.usage.outputTokens, 180);
+  assert.equal(parsed.usage.cachedTokens, 70);
+});
+
+test('gemini parseOutput returns undefined usage when stats absent', () => {
+  const agent = getAgent('gemini');
+  const output = JSON.stringify({ response: 'no stats' });
+  const parsed = agent.parseOutput(output);
+  assert.equal(parsed.usage, undefined);
+});
 
 test('parseSessionList extracts latest gemini session id', () => {
   const agent = getAgent('gemini');

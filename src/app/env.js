@@ -63,6 +63,22 @@ const TOKEN_BUDGET_DAILY = readNumberEnv(
   process.env.AIPAL_TOKEN_BUDGET_DAILY,
   0  // 0 = no limit, tracking only
 );
+const AGENT_QUOTA_CLAUDE = readNumberEnv(
+  process.env.AIPAL_AGENT_QUOTA_CLAUDE,
+  0
+);
+const AGENT_QUOTA_CODEX = readNumberEnv(
+  process.env.AIPAL_AGENT_QUOTA_CODEX,
+  0
+);
+const AGENT_QUOTA_GEMINI = readNumberEnv(
+  process.env.AIPAL_AGENT_QUOTA_GEMINI,
+  0
+);
+const AGENT_QUOTA_OPENCODE = readNumberEnv(
+  process.env.AIPAL_AGENT_QUOTA_OPENCODE,
+  0
+);
 const CRON_BUDGET_GATE_PCT = readNumberEnv(
   process.env.AIPAL_CRON_BUDGET_GATE_PCT,
   90
@@ -75,6 +91,10 @@ const SCRIPT_NAME_REGEX = /^[A-Za-z0-9_-]+$/;
 
 module.exports = {
   AGENT_MAX_BUFFER,
+  AGENT_QUOTA_CLAUDE,
+  AGENT_QUOTA_CODEX,
+  AGENT_QUOTA_GEMINI,
+  AGENT_QUOTA_OPENCODE,
   CRON_BUDGET_GATE_PCT,
   MEMORY_CAPTURE_MAX_CHARS,
   TOKEN_BUDGET_DAILY,
