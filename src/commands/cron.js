@@ -36,6 +36,50 @@ function registerCronCommand(options) {
       return;
     }
 
+    if (subcommand === 'show') {
+      const jobId = parts[1];
+      if (!jobId) {
+        await ctx.reply('Usage: /cron show <jobId>');
+        return;
+      }
+      try {
+        const jobs = await loadCronJobs();
+        const job = jobs.find((j) => j.id === jobId);
+        if (!job) {
+          await ctx.reply(
+            `Cron job "${jobId}" not found. Available: ${jobs
+              .map((j) => j.id)
+              .join(', ')}`
+          );
+          return;
+        }
+        const status = job.enabled ? '✅ Enabled' : '❌ Disabled';
+        const topicLabel = job.topicId ? `\nTopic: ${job.topicId}` : '';
+        const agentLabel = job.agent ? `\nAgent: ${job.agent}` : '';
+        const modelLabel = job.model ? `\nModel: ${job.model}` : '';
+        const cwdLabel = job.cwd ? `\nCwd: ${job.cwd}` : '';
+        const header = `${status}\nID: ${job.id}\nSchedule: ${job.cron}${topicLabel}${agentLabel}${modelLabel}${cwdLabel}\n\nPrompt:\n`;
+        const prompt = job.prompt || '(empty)';
+        const full = header + prompt;
+        // Split into chunks if too long for Telegram (4096 limit)
+        const maxLen = 3500;
+        if (full.length <= maxLen) {
+          await ctx.reply(full);
+        } else {
+          await ctx.reply(header + prompt.slice(0, maxLen - header.length) + '...');
+          let offset = maxLen - header.length;
+          while (offset < prompt.length) {
+            const chunk = prompt.slice(offset, offset + maxLen);
+            await ctx.reply(chunk);
+            offset += maxLen;
+          }
+        }
+      } catch (err) {
+        await replyWithError(ctx, 'Failed to show cron job.', err);
+      }
+      return;
+    }
+
     if (subcommand === 'assign') {
       const jobId = parts[1];
       if (!jobId) {
@@ -153,7 +197,7 @@ function registerCronCommand(options) {
       return;
     }
 
-    await ctx.reply('Usage: /cron [list|reload|chatid|assign|unassign|run]');
+    await ctx.reply('Usage: /cron [list|show|reload|chatid|assign|unassign|run]');
   });
 }
 
