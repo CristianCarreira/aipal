@@ -34,18 +34,36 @@ function registerCronCommand(options) {
           await ctx.reply('No cron jobs configured.');
           return;
         }
+        const scheduler = getCronScheduler();
+        const scheduledTasks = scheduler ? scheduler.tasks : new Map();
         const running = getRunningCronJobs ? getRunningCronJobs() : new Map();
         const now = Date.now();
         const lines = jobs.map((j) => {
-          const status = j.enabled ? '✅' : '❌';
-          const topicLabel = j.topicId ? ` [📌 Topic ${j.topicId}]` : '';
+          const isScheduled = scheduledTasks.has(j.id);
           const runInfo = running.get(j.id);
+          let status;
+          if (runInfo) {
+            status = '⏳';
+          } else if (!j.enabled) {
+            status = '❌';
+          } else if (isScheduled) {
+            status = '✅';
+          } else {
+            status = '⚠️';
+          }
+          const topicLabel = j.topicId ? ` [📌 Topic ${j.topicId}]` : '';
           const runningLabel = runInfo
-            ? ` (⏳ running ${formatDuration(now - runInfo.startedAt)})`
+            ? ` (running ${formatDuration(now - runInfo.startedAt)})`
             : '';
-          return `${status} ${j.id}: ${j.cron}${topicLabel}${runningLabel}`;
+          const warnLabel = j.enabled && !isScheduled && !runInfo
+            ? ' (not scheduled)'
+            : '';
+          return `${status} ${j.id}: ${j.cron}${topicLabel}${runningLabel}${warnLabel}`;
         });
-        await ctx.reply(`Cron jobs:\n${lines.join('\n')}`);
+        const schedulerStatus = scheduler
+          ? `Scheduler: active (${scheduledTasks.size} scheduled)`
+          : 'Scheduler: inactive';
+        await ctx.reply(`${schedulerStatus}\n\n${lines.join('\n')}`);
       } catch (err) {
         await replyWithError(ctx, 'Failed to list cron jobs.', err);
       }
