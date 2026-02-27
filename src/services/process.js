@@ -15,9 +15,9 @@ function wrapCommandWithPty(command, envKey) {
 }
 
 function execLocal(cmd, args, options = {}) {
-  const { timeout, maxBuffer, ...rest } = options;
+  const { timeout, maxBuffer, onData, ...rest } = options;
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       cmd,
       args,
       { encoding: 'utf8', timeout, maxBuffer, ...rest },
@@ -37,6 +37,12 @@ function execLocal(cmd, args, options = {}) {
         resolve(stdout || '');
       }
     );
+    if (onData && child.stdout) {
+      child.stdout.on('data', onData);
+    }
+    if (onData && child.stderr) {
+      child.stderr.on('data', onData);
+    }
   });
 }
 

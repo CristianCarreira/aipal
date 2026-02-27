@@ -1,3 +1,5 @@
+const MAX_LOG_CHARS = 50000;
+
 function createCronHandler(options) {
   const {
     bot,
@@ -15,6 +17,15 @@ function createCronHandler(options) {
 
   function getRunningJobs() {
     return new Map(runningJobs);
+  }
+
+  function getJobLogs(jobId) {
+    const entry = runningJobs.get(jobId);
+    if (!entry) return null;
+    return {
+      startedAt: entry.startedAt,
+      logs: entry.logs.join(''),
+    };
   }
 
   async function handleCronTrigger(chatId, prompt, triggerOptions = {}) {
@@ -35,9 +46,20 @@ function createCronHandler(options) {
         topicId || 'none'
       }${agent ? ` (agent: ${agent})` : ''}`
     );
+    const logChunks = [];
+    let totalLogChars = 0;
     if (jobId) {
-      runningJobs.set(jobId, { startedAt: Date.now(), chatId, topicId });
+      runningJobs.set(jobId, { startedAt: Date.now(), chatId, topicId, logs: logChunks });
     }
+    const onOutput = jobId
+      ? (chunk) => {
+          const text = String(chunk);
+          if (totalLogChars < MAX_LOG_CHARS) {
+            logChunks.push(text);
+            totalLogChars += text.length;
+          }
+        }
+      : undefined;
     try {
       const actionExtra = topicId ? { message_thread_id: topicId } : {};
       await bot.telegram.sendChatAction(chatId, 'typing', actionExtra);
@@ -56,6 +78,7 @@ function createCronHandler(options) {
         topicId,
         cwd,
         source: 'cron',
+        onOutput,
       });
       await captureMemoryEvent({
         threadKey: memoryThreadKey,
@@ -90,7 +113,7 @@ function createCronHandler(options) {
     }
   }
 
-  return { handleCronTrigger, getRunningJobs };
+  return { handleCronTrigger, getRunningJobs, getJobLogs };
 }
 
 module.exports = {

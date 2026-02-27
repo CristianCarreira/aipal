@@ -142,7 +142,7 @@ function createAgentRunner(options) {
   }
 
   async function runAgentForChat(chatId, prompt, runOptions = {}) {
-    const { topicId, agentId: overrideAgentId, model: overrideModel, imagePaths, scriptContext, documentPaths, source: runSource, cwd } =
+    const { topicId, agentId: overrideAgentId, model: overrideModel, imagePaths, scriptContext, documentPaths, source: runSource, cwd, onOutput } =
       runOptions;
     const source = runSource || 'chat';
     const effectiveAgentId = resolveEffectiveAgentId(
@@ -279,6 +279,7 @@ function createAgentRunner(options) {
         maxBuffer: agentMaxBuffer,
         env: execEnv,
         cwd,
+        onData: onOutput,
       });
     } catch (err) {
       execError = err;
@@ -378,6 +379,7 @@ function createAgentRunner(options) {
             maxBuffer: agentMaxBuffer,
             env: retryExecEnv,
             cwd,
+            onData: onOutput,
           });
         } catch (retryErr) {
           execError = retryErr;

@@ -13,6 +13,7 @@ function registerCronCommand(options) {
     buildCronTriggerPayload,
     extractCommandValue,
     getCronDefaultChatId,
+    getCronJobLogs,
     getCronScheduler,
     getRunningCronJobs,
     getTopicId,
@@ -213,6 +214,34 @@ function registerCronCommand(options) {
       return;
     }
 
+    if (subcommand === 'logs') {
+      const jobId = parts[1];
+      if (!jobId) {
+        await ctx.reply('Usage: /cron logs <jobId>');
+        return;
+      }
+      if (!getCronJobLogs) {
+        await ctx.reply('Logs not available.');
+        return;
+      }
+      const result = getCronJobLogs(jobId);
+      if (!result) {
+        await ctx.reply(`Cron job "${jobId}" is not running.`);
+        return;
+      }
+      const elapsed = formatDuration(Date.now() - result.startedAt);
+      const logs = result.logs || '';
+      if (!logs.trim()) {
+        await ctx.reply(`⏳ "${jobId}" running (${elapsed}) — no output yet.`);
+        return;
+      }
+      const maxLen = 3500;
+      const tail = logs.length > maxLen ? logs.slice(-maxLen) : logs;
+      const truncated = logs.length > maxLen ? '...(truncated)\n' : '';
+      await ctx.reply(`⏳ "${jobId}" running (${elapsed}):\n\n${truncated}${tail}`);
+      return;
+    }
+
     if (subcommand === 'reload') {
       const scheduler = getCronScheduler();
       if (scheduler) {
@@ -231,7 +260,7 @@ function registerCronCommand(options) {
       return;
     }
 
-    await ctx.reply('Usage: /cron [list|show|reload|chatid|assign|unassign|run]');
+    await ctx.reply('Usage: /cron [list|show|logs|reload|chatid|assign|unassign|run]');
   });
 }
 

@@ -342,7 +342,7 @@ const {
   startTyping,
 } = telegramReplyService;
 
-const { handleCronTrigger, getRunningJobs: getRunningCronJobs } = createCronHandler({
+const { handleCronTrigger, getRunningJobs: getRunningCronJobs, getJobLogs: getCronJobLogs } = createCronHandler({
   bot,
   buildMemoryThreadKey,
   captureMemoryEvent,
@@ -430,6 +430,7 @@ registerCommands({
   getGlobalModels: () => globalModels,
   getGlobalThinking: () => globalThinking,
   getMemoryStatus,
+  getCronJobLogs,
   getRunningCronJobs,
   getThreadTail,
   getTopicId,
