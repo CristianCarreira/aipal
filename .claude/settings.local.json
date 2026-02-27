@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e:*)",
+      "Bash(AIPAL_PROMPT='Hello world with special chars: $100 and \"\"quotes\"\" and ''''apostrophes''''' bash -lc 'python3 -c ''''import pty,sys; pty.spawn\\([\"\"bash\"\",\"\"-lc\"\", sys.argv[1]]\\)'''' ''''echo \"\"$AIPAL_PROMPT\"\"''''')",
+      "Bash(node --test:*)",
+      "Bash(npm test:*)",
+      "Bash(grep:*)",
+      "Bash(git stash:*)",
+      "Bash(git stash pop:*)",
+      "WebSearch",
+      "Bash(for file in token-tracker agents/claude services/agent-runner handlers/text handlers/media services/cron-handler app/env index commands/usage message-utils memory-store services/memory)",
+      "Bash(do echo '=== $file.js ===' grep require.*$file /workspace/src/**/*.js /workspace/test/*.js)",
+      "Bash(uniq:*)",
+      "Bash(npm install 2>&1 | tail -5)",
+      "WebFetch(domain:developers.openai.com)",
+      "WebFetch(domain:google-gemini.github.io)",
+      "WebFetch(domain:opencode.ai)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npx vitest run test/cron-scheduler.test.js 2>&1 | tail -20)"
+    ]
+  }
+}

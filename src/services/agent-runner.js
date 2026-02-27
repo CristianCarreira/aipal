@@ -1,5 +1,15 @@
 const RETRIEVAL_CACHE_TTL_MS = 60000;
 
+const STALE_SESSION_PATTERNS = [
+  /no conversation found with session id/i,
+  /session [\w-]+ not found/i,
+  /invalid session/i,
+  /conversation not found/i,
+  /session has expired/i,
+  /could not find session/i,
+  /unknown session/i,
+];
+
 function createAgentRunner(options) {
   const {
     agentMaxBuffer,
@@ -283,7 +293,110 @@ function createAgentRunner(options) {
         `Agent finished chat=${chatId} topic=${topicId || 'root'} durationMs=${elapsedMs}`
       );
     }
-    const parsed = agent.parseOutput(output);
+    let parsed = agent.parseOutput(output);
+
+    // Detect stale session and retry without --resume
+    if (threadId && execError) {
+      const rawOutput = String(output || execError.stderr || '');
+      const isStaleSession = STALE_SESSION_PATTERNS.some((re) => re.test(rawOutput));
+      if (isStaleSession) {
+        console.warn(
+          `Stale session detected chat=${chatId} topic=${topicId || 'root'} threadId=${threadId}; retrying without resume`
+        );
+        threads.delete(threadKey);
+        threadTurns.set(threadKey, 1);
+        threadContextChars.delete(threadKey);
+        persistThreads().catch((err) =>
+          console.warn('Failed to persist threads after stale session cleanup:', err)
+        );
+
+        // Rebuild prompt with bootstrap context (since we're starting fresh)
+        let retryPrompt = prompt;
+        if (agent.id === 'claude') {
+          retryPrompt = prefixTextWithTimestamp(retryPrompt, {
+            timeZone: defaultTimeZone,
+          });
+        }
+        const bootstrap = await buildBootstrapContext({ threadKey, compact: true });
+        retryPrompt = retryPrompt
+          ? `${bootstrap}\n\n${retryPrompt}`
+          : bootstrap;
+
+        if (prompt.trim().length >= 15) {
+          const cacheKey = `${chatId}:${topicId || ''}:${prompt.trim().slice(0, 200)}`;
+          let retrievalContext = getCachedRetrieval(cacheKey);
+          if (retrievalContext === undefined) {
+            retrievalContext = await buildMemoryRetrievalContext({
+              query: prompt,
+              chatId,
+              topicId,
+              agentId: effectiveAgentId,
+              limit: memoryRetrievalLimit,
+            });
+            setCachedRetrieval(cacheKey, retrievalContext || '');
+          }
+          if (retrievalContext) {
+            retryPrompt = `${retryPrompt}\n\n${retrievalContext}`;
+          }
+        }
+
+        const retryFinalPrompt = buildPrompt(
+          retryPrompt,
+          [],
+          imageDir,
+          undefined,
+          [],
+          documentDir,
+          { includeFileInstructions: true, includeStyleInstructions: true }
+        );
+        const retryPromptExpression = '"$AIPAL_PROMPT"';
+        const retryAgentCmd = agent.buildCommand({
+          prompt: retryFinalPrompt,
+          promptExpression: retryPromptExpression,
+          threadId: undefined,
+          thinking,
+          model: overrideModel || getGlobalModels()[effectiveAgentId],
+        });
+        let retryCommandToRun = retryAgentCmd;
+        const retryExecEnv = { ...process.env, AIPAL_PROMPT: retryFinalPrompt };
+        if (agent.needsPty) {
+          retryExecEnv.AIPAL_CMD = retryCommandToRun;
+          retryCommandToRun = wrapCommandWithPty(retryCommandToRun, 'AIPAL_CMD');
+        }
+        if (agent.mergeStderr) {
+          retryCommandToRun = `${retryCommandToRun} 2>&1`;
+        }
+
+        console.info(
+          `Agent retry start chat=${chatId} topic=${topicId || 'root'} agent=${agent.id} thread=new`
+        );
+        const retryStartedAt = Date.now();
+        execError = undefined;
+        try {
+          output = await execLocal('bash', ['-lc', retryCommandToRun], {
+            timeout: agentTimeoutMs,
+            maxBuffer: agentMaxBuffer,
+            env: retryExecEnv,
+            cwd,
+          });
+        } catch (retryErr) {
+          execError = retryErr;
+          if (retryErr && typeof retryErr.stdout === 'string' && retryErr.stdout.trim()) {
+            output = retryErr.stdout;
+          } else {
+            throw retryErr;
+          }
+        } finally {
+          const elapsedMs = Date.now() - retryStartedAt;
+          console.info(
+            `Agent retry finished chat=${chatId} topic=${topicId || 'root'} durationMs=${elapsedMs}`
+          );
+        }
+        parsed = agent.parseOutput(output);
+        threadId = undefined;
+      }
+    }
+
     if (execError && !parsed.sawJson && !String(parsed.text || '').trim()) {
       throw execError;
     }
