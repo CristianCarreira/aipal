@@ -1001,7 +1001,7 @@ test('cron handler skips jobs when budget gate exceeded', async () => {
   const { createCronHandler } = require('../src/services/cron-handler');
   let agentCalled = false;
 
-  const handler = createCronHandler({
+  const { handleCronTrigger } = createCronHandler({
     bot: {
       telegram: {
         sendChatAction: async () => {},
@@ -1018,7 +1018,7 @@ test('cron handler skips jobs when budget gate exceeded', async () => {
     sendResponseToChat: async () => {},
   });
 
-  await handler(12345, 'test prompt', { jobId: 'test-job' });
+  await handleCronTrigger(12345, 'test prompt', { jobId: 'test-job' });
   assert.equal(agentCalled, false, 'Agent should not be called when budget gate exceeded');
 });
 
@@ -1026,7 +1026,7 @@ test('cron handler runs jobs when under budget gate', async () => {
   const { createCronHandler } = require('../src/services/cron-handler');
   let agentCalled = false;
 
-  const handler = createCronHandler({
+  const { handleCronTrigger } = createCronHandler({
     bot: {
       telegram: {
         sendChatAction: async () => {},
@@ -1043,6 +1043,6 @@ test('cron handler runs jobs when under budget gate', async () => {
     sendResponseToChat: async () => {},
   });
 
-  await handler(12345, 'test prompt', { jobId: 'test-job' });
+  await handleCronTrigger(12345, 'test prompt', { jobId: 'test-job' });
   assert.equal(agentCalled, true, 'Agent should be called when under budget gate');
 });

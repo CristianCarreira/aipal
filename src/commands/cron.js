@@ -1,3 +1,12 @@
+function formatDuration(ms) {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 function registerCronCommand(options) {
   const {
     bot,
@@ -5,6 +14,7 @@ function registerCronCommand(options) {
     extractCommandValue,
     getCronDefaultChatId,
     getCronScheduler,
+    getRunningCronJobs,
     getTopicId,
     handleCronTrigger,
     loadCronJobs,
@@ -24,10 +34,16 @@ function registerCronCommand(options) {
           await ctx.reply('No cron jobs configured.');
           return;
         }
+        const running = getRunningCronJobs ? getRunningCronJobs() : new Map();
+        const now = Date.now();
         const lines = jobs.map((j) => {
           const status = j.enabled ? '✅' : '❌';
           const topicLabel = j.topicId ? ` [📌 Topic ${j.topicId}]` : '';
-          return `${status} ${j.id}: ${j.cron}${topicLabel}`;
+          const runInfo = running.get(j.id);
+          const runningLabel = runInfo
+            ? ` (⏳ running ${formatDuration(now - runInfo.startedAt)})`
+            : '';
+          return `${status} ${j.id}: ${j.cron}${topicLabel}${runningLabel}`;
         });
         await ctx.reply(`Cron jobs:\n${lines.join('\n')}`);
       } catch (err) {

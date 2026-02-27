@@ -11,7 +11,13 @@ function createCronHandler(options) {
     sendResponseToChat,
   } = options;
 
-  return async function handleCronTrigger(chatId, prompt, triggerOptions = {}) {
+  const runningJobs = new Map();
+
+  function getRunningJobs() {
+    return new Map(runningJobs);
+  }
+
+  async function handleCronTrigger(chatId, prompt, triggerOptions = {}) {
     const { jobId, agent, model, topicId, cwd } = triggerOptions;
     if (cronBudgetGatePct > 0 && getBudgetPct) {
       const pct = getBudgetPct();
@@ -29,6 +35,9 @@ function createCronHandler(options) {
         topicId || 'none'
       }${agent ? ` (agent: ${agent})` : ''}`
     );
+    if (jobId) {
+      runningJobs.set(jobId, { startedAt: Date.now(), chatId, topicId });
+    }
     try {
       const actionExtra = topicId ? { message_thread_id: topicId } : {};
       await bot.telegram.sendChatAction(chatId, 'typing', actionExtra);
@@ -74,8 +83,14 @@ function createCronHandler(options) {
           errExtra
         );
       } catch {}
+    } finally {
+      if (jobId) {
+        runningJobs.delete(jobId);
+      }
     }
-  };
+  }
+
+  return { handleCronTrigger, getRunningJobs };
 }
 
 module.exports = {
