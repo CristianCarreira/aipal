@@ -297,10 +297,10 @@ function createAgentRunner(options) {
     let parsed = agent.parseOutput(output);
 
     // Detect stale session and retry without --resume
-    if (threadId && execError) {
-      const rawOutput = String(output || execError.stderr || '');
-      const isStaleSession = STALE_SESSION_PATTERNS.some((re) => re.test(rawOutput));
-      if (isStaleSession) {
+    // Check both raw output (for exec errors) and parsed text (for PTY-wrapped runs where exit code is masked)
+    const staleCheckText = String(parsed.text || '') + '\n' + String(output || '') + '\n' + String(execError?.stderr || '');
+    const isStaleSession = threadId && !parsed.sawJson && STALE_SESSION_PATTERNS.some((re) => re.test(staleCheckText));
+    if (isStaleSession) {
         console.warn(
           `Stale session detected chat=${chatId} topic=${topicId || 'root'} threadId=${threadId}; retrying without resume`
         );
@@ -396,7 +396,6 @@ function createAgentRunner(options) {
         }
         parsed = agent.parseOutput(output);
         threadId = undefined;
-      }
     }
 
     if (execError && !parsed.sawJson && !String(parsed.text || '').trim()) {
