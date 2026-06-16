@@ -207,7 +207,7 @@ function createAgentRunner(options) {
         : bootstrap;
     }
     if (prompt.trim().length >= 15) {
-      const cacheKey = `${chatId}:${topicId || ''}:${prompt.trim().slice(0, 200)}`;
+      const cacheKey = `${source}:${chatId}:${topicId || ''}:${prompt.trim().slice(0, 200)}`;
       let retrievalContext = getCachedRetrieval(cacheKey);
       if (retrievalContext === undefined) {
         retrievalContext = await buildMemoryRetrievalContext({
@@ -216,6 +216,7 @@ function createAgentRunner(options) {
           topicId,
           agentId: effectiveAgentId,
           limit: memoryRetrievalLimit,
+          isolate: source === 'cron',
         });
         setCachedRetrieval(cacheKey, retrievalContext || '');
       }
@@ -324,7 +325,7 @@ function createAgentRunner(options) {
           : bootstrap;
 
         if (prompt.trim().length >= 15) {
-          const cacheKey = `${chatId}:${topicId || ''}:${prompt.trim().slice(0, 200)}`;
+          const cacheKey = `${source}:${chatId}:${topicId || ''}:${prompt.trim().slice(0, 200)}`;
           let retrievalContext = getCachedRetrieval(cacheKey);
           if (retrievalContext === undefined) {
             retrievalContext = await buildMemoryRetrievalContext({
@@ -333,6 +334,7 @@ function createAgentRunner(options) {
               topicId,
               agentId: effectiveAgentId,
               limit: memoryRetrievalLimit,
+              isolate: source === 'cron',
             });
             setCachedRetrieval(cacheKey, retrievalContext || '');
           }

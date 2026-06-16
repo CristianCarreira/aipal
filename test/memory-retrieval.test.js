@@ -74,6 +74,51 @@ test('searchMemory excludes operational cron/heartbeat/tool-leak events', async 
   assert.match(context, /reconciliacion de los crons/i);
 });
 
+test('searchMemory isolate restricts a cron to its own thread', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-retrieval-'));
+  const { memoryStore, retrieval } = loadModules(dir);
+
+  // Same chat, different cron personas (topics) sharing a vocabulary.
+  await memoryStore.appendMemoryEvent({
+    threadKey: '7:sauron:claude',
+    chatId: '7',
+    topicId: 'sauron',
+    agentId: 'claude',
+    role: 'assistant',
+    text: 'sauron: revisé la reconciliacion del PR 4480 y lo aprobé',
+  });
+  await memoryStore.appendMemoryEvent({
+    threadKey: '7:watchmen:claude',
+    chatId: '7',
+    topicId: 'watchmen',
+    agentId: 'claude',
+    role: 'assistant',
+    text: 'watchmen: revisé la reconciliacion del PR 4490 y pedí cambios',
+  });
+
+  const isolated = await retrieval.searchMemory({
+    query: 'reconciliacion revision PR',
+    chatId: '7',
+    topicId: 'sauron',
+    agentId: 'claude',
+    limit: 10,
+    isolate: true,
+  });
+  assert.ok(isolated.length >= 1);
+  assert.ok(isolated.every((hit) => /sauron:/.test(hit.text)));
+  assert.ok(!isolated.some((hit) => /watchmen:/.test(hit.text)));
+
+  // Without isolation the other persona's memory is reachable.
+  const global = await retrieval.searchMemory({
+    query: 'reconciliacion revision PR',
+    chatId: '7',
+    topicId: 'sauron',
+    agentId: 'claude',
+    limit: 10,
+  });
+  assert.ok(global.some((hit) => /watchmen:/.test(hit.text)));
+});
+
 test('searchMemory ranks same-thread and lexical matches first', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-retrieval-'));
   const { memoryStore, retrieval } = loadModules(dir);

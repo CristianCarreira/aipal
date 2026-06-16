@@ -221,6 +221,10 @@ async function searchMemory(options = {}) {
   for (const event of all) {
     if (isOperationalEvent(event)) continue;
     const scope = scoreScope(event, options);
+    // Cron personas recall only their own past runs — their semantic memory is
+    // isolated from other crons and from interactive chats. They still get the
+    // shared, curated [MEMORY] block via bootstrap.
+    if (options.isolate && scope.label !== 'same-thread') continue;
     const lexical = scoreLexical(event.text, queryTokens, query);
     if (queryTokens.length > 0 && lexical === 0 && scope.value < 2) continue;
     const recency = scoreRecency(event.createdAt, nowMs);
