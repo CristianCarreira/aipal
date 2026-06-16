@@ -19,6 +19,61 @@ function loadModules(configHome) {
   return { memoryStore, retrieval };
 }
 
+test('searchMemory excludes operational cron/heartbeat/tool-leak events', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-retrieval-'));
+  const { memoryStore, retrieval } = loadModules(dir);
+
+  // Cron reviewer role-prompt living in its own persona thread.
+  await memoryStore.appendMemoryEvent({
+    threadKey: '9:sauron:claude',
+    chatId: '9',
+    topicId: 'sauron',
+    agentId: 'claude',
+    role: 'user',
+    kind: 'cron',
+    text: 'ROL Reviewer 1 (sauron). PRE-CHECK (ejecutar SIEMPRE primero): gh pr list reconciliacion',
+  });
+  // Heartbeat + leaked tool-call XML responses from that cron persona.
+  await memoryStore.appendMemoryEvent({
+    threadKey: '9:sauron:claude',
+    chatId: '9',
+    topicId: 'sauron',
+    agentId: 'claude',
+    role: 'assistant',
+    text: 'HEARTBEAT_OK',
+  });
+  await memoryStore.appendMemoryEvent({
+    threadKey: '9:sauron:claude',
+    chatId: '9',
+    topicId: 'sauron',
+    agentId: 'claude',
+    role: 'assistant',
+    text: 'court\n<invoke name="Bash">\n<parameter name="command">gh pr list</parameter>',
+  });
+  // A genuine user message in the normal root chat.
+  await memoryStore.appendMemoryEvent({
+    threadKey: '9:root:claude',
+    chatId: '9',
+    topicId: 'root',
+    agentId: 'claude',
+    role: 'user',
+    text: 'Revisa la reconciliacion de los crons que algo va raro',
+  });
+
+  const context = await retrieval.buildMemoryRetrievalContext({
+    query: 'reconciliacion crons sauron pr list',
+    chatId: '9',
+    topicId: 'root',
+    agentId: 'claude',
+    limit: 12,
+  });
+
+  assert.doesNotMatch(context, /ROL Reviewer/);
+  assert.doesNotMatch(context, /HEARTBEAT_OK/);
+  assert.doesNotMatch(context, /<invoke/);
+  assert.match(context, /reconciliacion de los crons/i);
+});
+
 test('searchMemory ranks same-thread and lexical matches first', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aipal-retrieval-'));
   const { memoryStore, retrieval } = loadModules(dir);

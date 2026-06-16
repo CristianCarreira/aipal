@@ -27,6 +27,31 @@ const DEFAULT_MAX_EVENT_AGE_DAYS = 60;
 
 const fileWriteQueues = new Map();
 
+// Operational events (cron role-prompts, heartbeat/curation tokens, and leaked
+// tool-call XML) are bookkeeping for the cron personas — never conversational
+// memory. They must NOT bleed into normal chats via retrieval, auto-memory, or
+// thread bootstrap, or the agent starts impersonating a reviewer cron.
+const OPERATIONAL_KINDS = new Set(['cron']);
+// Matches the bare sentinel as the message itself or as the trailing signal
+// after a short preamble (e.g. "No hay PRs abiertas. HEARTBEAT_OK"), but not a
+// prose mention mid-sentence (e.g. "te contesto `HEARTBEAT_OK` por error").
+const INTERNAL_TOKEN_PATTERN = /(^|[\s.>])(HEARTBEAT_OK|CURATION_EMPTY)\s*$/i;
+const ROLE_PROMPT_PATTERN =
+  /\bROL\s+(Reviewer|Implementer|Merge|Gatekeeper|PR\s+Fixer)\b|PRE-?CHECK\s*\(ejecutar\s+SIEMPRE/i;
+const TOOL_LEAK_PATTERN = /<\/?(antml:)?invoke\b|<parameter\s+name=/i;
+
+function isOperationalEvent(event) {
+  if (!event) return false;
+  if (OPERATIONAL_KINDS.has(String(event.kind || ''))) return true;
+  const text = String(event.text || '');
+  if (!text) return false;
+  return (
+    INTERNAL_TOKEN_PATTERN.test(text) ||
+    TOOL_LEAK_PATTERN.test(text) ||
+    ROLE_PROMPT_PATTERN.test(text)
+  );
+}
+
 function normalizeText(input) {
   return String(input || '').replace(/\s+/g, ' ').trim();
 }
@@ -200,6 +225,7 @@ function buildAutoMemorySection(events, options = {}) {
   const seenProjects = new Set();
 
   for (const event of events) {
+    if (isOperationalEvent(event)) continue;
     const role = String(event.role || '');
     const text = truncateText(event.text, MAX_EVENT_TEXT_LENGTH);
     if (!text || role !== 'user') continue;
@@ -211,7 +237,7 @@ function buildAutoMemorySection(events, options = {}) {
   const recent = events
     .slice()
     .reverse()
-    .filter((event) => normalizeText(event.text))
+    .filter((event) => normalizeText(event.text) && !isOperationalEvent(event))
     .slice(0, maxRecentActivity)
     .reverse();
   for (const event of recent) {
@@ -334,7 +360,9 @@ async function buildThreadBootstrap(threadKey, options = {}) {
   const limit = Number.isFinite(options.limit)
     ? options.limit
     : DEFAULT_THREAD_BOOTSTRAP_LIMIT;
-  const events = await readThreadEvents(threadKey);
+  const events = (await readThreadEvents(threadKey)).filter(
+    (event) => !isOperationalEvent(event)
+  );
   if (!events.length) return '';
   const recent = events.slice(-Math.max(1, limit));
   const lines = ['Recent thread memory:'];
@@ -437,6 +465,7 @@ module.exports = {
   curateMemory,
   getMemoryStatus,
   getThreadTail,
+  isOperationalEvent,
   normalizeThreadKey,
   stripAutoMemorySection,
   threadFilePath,
