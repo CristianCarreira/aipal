@@ -37,6 +37,15 @@ function execLocal(cmd, args, options = {}) {
         resolve(stdout || '');
       }
     );
+    // Close the child's stdin immediately. execFile leaves stdin as an open
+    // pipe; CLIs that read stdin when it is not a TTY (e.g. `codex exec`, which
+    // prints "Reading additional input from stdin...") block forever waiting
+    // for input that never arrives, then die on the timeout with no output.
+    // Sending EOF lets them proceed with just the prompt passed via argv.
+    if (child.stdin) {
+      child.stdin.on('error', () => {});
+      child.stdin.end();
+    }
     if (onData && child.stdout) {
       child.stdout.on('data', onData);
     }

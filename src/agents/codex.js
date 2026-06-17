@@ -27,11 +27,32 @@ function buildCommand({ prompt, promptExpression, threadId, model, thinking }) {
   return `${CODEX_CMD} exec ${args} ${promptValue}`.trim();
 }
 
+function extractErrorMessage(raw) {
+  if (raw == null) return '';
+  if (typeof raw === 'object') {
+    return extractErrorMessage(raw.message || raw.error || '');
+  }
+  const text = String(raw);
+  // Codex nests the real error as a JSON string inside `message`.
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const nested = extractErrorMessage(parsed.error || parsed.message);
+      if (nested) return nested;
+    } catch {
+      /* fall through to the raw text */
+    }
+  }
+  return text;
+}
+
 function parseOutput(output) {
   const lines = String(output || '').split(/\r?\n/);
   let threadId;
   const allMessages = [];
   const finalMessages = [];
+  const errorMessages = [];
   let sawJson = false;
   let buffer = '';
   for (const line of lines) {
@@ -55,6 +76,11 @@ function parseOutput(output) {
       threadId = payload.thread_id;
       continue;
     }
+    if (payload.type === 'error' || payload.type === 'turn.failed') {
+      const msg = extractErrorMessage(payload.error || payload.message);
+      if (msg && msg.trim()) errorMessages.push(msg.trim());
+      continue;
+    }
     if (payload.type === 'item.completed' && payload.item && typeof payload.item.text === 'string') {
       const itemType = String(payload.item.type || '');
       if (itemType.includes('message')) {
@@ -74,7 +100,12 @@ function parseOutput(output) {
     }
   }
   const selected = finalMessages.length > 0 ? finalMessages : allMessages.slice(-1);
-  const text = selected.join('\n').trim();
+  let text = selected.join('\n').trim();
+  // No assistant message but the run errored: surface the error instead of an
+  // empty string, so the cron handler can report it rather than silently drop it.
+  if (!text && errorMessages.length > 0) {
+    text = `⚠️ codex error: ${errorMessages[errorMessages.length - 1]}`;
+  }
   return { text, threadId, sawJson };
 }
 

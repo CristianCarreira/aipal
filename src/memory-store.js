@@ -52,6 +52,23 @@ function isOperationalEvent(event) {
   );
 }
 
+// Degraded cron output: the model echoed leaked tool-call XML or its own
+// role-prompt instead of executing. Unlike a heartbeat token, this must never
+// reach the chat and the CLI session should be reset. Deliberately excludes the
+// HEARTBEAT_OK/CURATION_EMPTY sentinels, which are valid (just-no-news) results.
+function isDegradedOutput(text) {
+  const value = String(text || '');
+  if (!value) return false;
+  return TOOL_LEAK_PATTERN.test(value) || ROLE_PROMPT_PATTERN.test(value);
+}
+
+// Remove the trailing internal sentinel from an otherwise real cron summary so
+// the prose (e.g. "No hay PRs abiertas...") can be shown to the user without the
+// raw HEARTBEAT_OK/CURATION_EMPTY token.
+function stripInternalTokens(text) {
+  return String(text || '').replace(INTERNAL_TOKEN_PATTERN, '$1').trim();
+}
+
 function normalizeText(input) {
   return String(input || '').replace(/\s+/g, ' ').trim();
 }
@@ -465,8 +482,10 @@ module.exports = {
   curateMemory,
   getMemoryStatus,
   getThreadTail,
+  isDegradedOutput,
   isOperationalEvent,
   normalizeThreadKey,
+  stripInternalTokens,
   stripAutoMemorySection,
   threadFilePath,
 };

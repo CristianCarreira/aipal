@@ -42,7 +42,9 @@ const {
   curateMemory,
   getMemoryStatus,
   getThreadTail,
+  isDegradedOutput,
   isOperationalEvent,
+  stripInternalTokens,
 } = require('./memory-store');
 const {
   buildMemoryRetrievalContext,
@@ -350,7 +352,9 @@ const { handleCronTrigger, getRunningJobs: getRunningCronJobs, getJobLogs: getCr
   cronBudgetGatePct: CRON_BUDGET_GATE_PCT,
   extractMemoryText,
   getBudgetPct: () => tokenTracker.getBudgetPct(),
+  isDegradedOutput,
   isOperationalEvent,
+  stripInternalTokens,
   resetThreadSession: (chatId, topicId, agentId) => {
     clearThreadForAgent(threads, chatId, topicId, agentId);
     return persistThreads();

@@ -8,11 +8,13 @@ function createCronHandler(options) {
     cronBudgetGatePct,
     extractMemoryText,
     getBudgetPct,
+    isDegradedOutput,
     isOperationalEvent,
     resetThreadSession,
     resolveEffectiveAgentId,
     runAgentForChat,
     sendResponseToChat,
+    stripInternalTokens,
   } = options;
 
   const runningJobs = new Map();
@@ -91,20 +93,18 @@ function createCronHandler(options) {
         kind: 'text',
         text: extractMemoryText(response),
       });
-      const silentTokens = ['HEARTBEAT_OK', 'CURATION_EMPTY'];
-      const matchedToken = silentTokens.find((t) => response.includes(t));
-      if (matchedToken) {
-        console.info(`Cron job ${jobId}: ${matchedToken} (silent)`);
-        return;
-      }
       // Degraded output: the model echoed leaked tool-call XML or its own
       // role-prompt instead of executing. Never post that to the chat, and
       // reset the CLI session — once a session contains such a turn it keeps
-      // resuming into it and repeats the leak every run until cleared.
-      if (
-        typeof isOperationalEvent === 'function' &&
-        isOperationalEvent({ kind: 'text', text: response })
-      ) {
+      // resuming into it and repeats the leak every run until cleared. Checked
+      // before the heartbeat branch so a leak that happens to end in a sentinel
+      // is still suppressed.
+      const looksDegraded =
+        typeof isDegradedOutput === 'function'
+          ? isDegradedOutput(response)
+          : typeof isOperationalEvent === 'function' &&
+            isOperationalEvent({ kind: 'text', text: response });
+      if (looksDegraded) {
         console.warn(
           `Cron job ${jobId}: suppressed degraded tool-leak/role-echo output; resetting session`
         );
@@ -118,6 +118,21 @@ function createCronHandler(options) {
             );
           }
         }
+        return;
+      }
+      // Heartbeat/curation sentinel: the cron ran with no actionable news. Show
+      // what it actually reported (minus the raw token) so the run is visible
+      // instead of silently dropped.
+      const silentTokens = ['HEARTBEAT_OK', 'CURATION_EMPTY'];
+      const matchedToken = silentTokens.find((t) => response.includes(t));
+      if (matchedToken) {
+        const cleaned =
+          typeof stripInternalTokens === 'function'
+            ? stripInternalTokens(response)
+            : response.replace(/\s*(HEARTBEAT_OK|CURATION_EMPTY)\s*$/i, '').trim();
+        const summary = cleaned || `✅ ${jobId || 'cron'}: sin novedades`;
+        console.info(`Cron job ${jobId}: ${matchedToken} -> posting summary`);
+        await sendResponseToChat(chatId, summary, { topicId });
         return;
       }
       await sendResponseToChat(chatId, response, { topicId });
