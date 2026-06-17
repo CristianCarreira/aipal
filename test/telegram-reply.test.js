@@ -8,8 +8,25 @@ const {
   createTelegramReplyService,
   sanitizeResponse,
   stripAnsi,
+  stripToolCallXml,
   extractJsonResult,
 } = require('../src/services/telegram-reply');
+
+test('sanitizeResponse strips leaked tool-call XML so it never reaches a chat', () => {
+  const leak =
+    '<invoke name="Bash"> <parameter name="command">gh pr list</parameter> <parameter name="description">x</parameter> </invoke>';
+  assert.equal(sanitizeResponse(leak).trim(), '');
+  // The CLI sometimes glues a junk token to the opening tag; the XML still goes.
+  assert.equal(sanitizeResponse(`court ${leak}`).trim(), 'court');
+  // Unclosed leak: drop the XML, keep the surrounding prose.
+  assert.equal(
+    stripToolCallXml('done <invoke name="Bash"><parameter name="command">ls</parameter>').trim(),
+    'done'
+  );
+  // Real content with no tool XML is untouched.
+  const real = '## Reviewer 1 (sauron)\n**Decision: APPROVE**';
+  assert.equal(stripToolCallXml(real), real);
+});
 
 test('replyWithResponse sends formatted text chunk', async () => {
   const replies = [];

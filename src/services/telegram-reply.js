@@ -29,8 +29,25 @@ function extractJsonResult(value) {
   return text;
 }
 
+// Under load the agent CLI sometimes returns its final answer as literal
+// tool-call markup ("court <invoke name=\"Bash\">...</invoke>") instead of
+// executing the tool. That XML must never reach a chat — strip whole blocks,
+// any dangling/unclosed remainder, and orphan <parameter> tags. (The cron path
+// additionally suppresses the entire response when it detects such a leak.)
+function stripToolCallXml(value) {
+  let text = String(value || '');
+  if (!/<\/?(antml:)?invoke\b|<\/?(antml:)?parameter\b/i.test(text)) {
+    return text;
+  }
+  // Complete blocks, then any unclosed remainder, then orphan parameter tags.
+  text = text.replace(/<(antml:)?invoke\b[\s\S]*?<\/(antml:)?invoke>/gi, '');
+  text = text.replace(/<(antml:)?invoke\b[\s\S]*$/gi, '');
+  text = text.replace(/<\/?(antml:)?parameter\b[^>]*>/gi, '');
+  return text;
+}
+
 function sanitizeResponse(value) {
-  return extractJsonResult(stripAnsi(value));
+  return stripToolCallXml(extractJsonResult(stripAnsi(value)));
 }
 
 function createTelegramReplyService(options) {
@@ -199,5 +216,6 @@ module.exports = {
   createTelegramReplyService,
   sanitizeResponse,
   stripAnsi,
+  stripToolCallXml,
   extractJsonResult,
 };

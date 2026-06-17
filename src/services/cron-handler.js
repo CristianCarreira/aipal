@@ -8,6 +8,8 @@ function createCronHandler(options) {
     cronBudgetGatePct,
     extractMemoryText,
     getBudgetPct,
+    isOperationalEvent,
+    resetThreadSession,
     resolveEffectiveAgentId,
     runAgentForChat,
     sendResponseToChat,
@@ -93,6 +95,29 @@ function createCronHandler(options) {
       const matchedToken = silentTokens.find((t) => response.includes(t));
       if (matchedToken) {
         console.info(`Cron job ${jobId}: ${matchedToken} (silent)`);
+        return;
+      }
+      // Degraded output: the model echoed leaked tool-call XML or its own
+      // role-prompt instead of executing. Never post that to the chat, and
+      // reset the CLI session — once a session contains such a turn it keeps
+      // resuming into it and repeats the leak every run until cleared.
+      if (
+        typeof isOperationalEvent === 'function' &&
+        isOperationalEvent({ kind: 'text', text: response })
+      ) {
+        console.warn(
+          `Cron job ${jobId}: suppressed degraded tool-leak/role-echo output; resetting session`
+        );
+        if (typeof resetThreadSession === 'function') {
+          try {
+            await resetThreadSession(chatId, topicId, effectiveAgentId);
+          } catch (resetErr) {
+            console.warn(
+              `Cron job ${jobId}: failed to reset session:`,
+              resetErr?.message || resetErr
+            );
+          }
+        }
         return;
       }
       await sendResponseToChat(chatId, response, { topicId });
