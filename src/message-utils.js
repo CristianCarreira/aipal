@@ -110,7 +110,61 @@ function markdownToTelegramHtml(value) {
     return `<pre><code>${escapeHtml(code)}</code></pre>`;
   });
 
-  return text;
+  return balanceTelegramHtml(text);
+}
+
+// Telegram requires strictly nested entities. Our markdown regexes convert
+// emphasis independently, so overlapping/stray markers (e.g. `_a **b_ c**`,
+// file globs, a chunk split mid-tag) can yield malformed HTML like
+// `<i>..<b>..</i></b>`, which Telegram rejects with
+// "can't parse entities: Unmatched end tag". This re-nests the supported
+// inline tags: closers are matched LIFO, premature closes re-open the tags
+// they cut across, orphan closers are dropped, and unclosed tags are closed
+// at the end.
+const TELEGRAM_TAGS = new Set(['b', 'i', 's', 'u', 'code', 'pre', 'a']);
+
+function balanceTelegramHtml(html) {
+  if (!html) return html;
+  const tagRegex = /<(\/?)([a-z]+)(\s[^>]*)?>/gi;
+  const stack = [];
+  let out = '';
+  let lastIndex = 0;
+  let match = tagRegex.exec(html);
+  while (match !== null) {
+    const [full, slash, rawName] = match;
+    const name = rawName.toLowerCase();
+    out += html.slice(lastIndex, match.index);
+    lastIndex = match.index + full.length;
+    if (!TELEGRAM_TAGS.has(name)) {
+      out += full;
+    } else if (!slash) {
+      stack.push({ name, openTag: full });
+      out += full;
+    } else {
+      const depth = stack.map((entry) => entry.name).lastIndexOf(name);
+      if (depth === -1) {
+        // Orphan closing tag — drop it.
+      } else {
+        const reopen = [];
+        for (let i = stack.length - 1; i > depth; i -= 1) {
+          out += `</${stack[i].name}>`;
+          reopen.unshift(stack[i]);
+        }
+        out += `</${name}>`;
+        stack.splice(depth);
+        for (const entry of reopen) {
+          out += entry.openTag;
+          stack.push(entry);
+        }
+      }
+    }
+    match = tagRegex.exec(html);
+  }
+  out += html.slice(lastIndex);
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    out += `</${stack[i].name}>`;
+  }
+  return out;
 }
 
 function formatError(err) {
@@ -334,6 +388,7 @@ module.exports = {
   chunkText,
   chunkMarkdown,
   markdownToTelegramHtml,
+  balanceTelegramHtml,
   formatError,
   parseSlashCommand,
   extractCommandValue,

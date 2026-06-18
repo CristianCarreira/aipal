@@ -11,8 +11,24 @@ const {
   buildPrompt,
   parseSlashCommand,
   markdownToTelegramHtml,
+  balanceTelegramHtml,
   chunkMarkdown,
 } = require('../src/message-utils');
+
+function assertWellNested(html) {
+  const stack = [];
+  const allowed = new Set(['b', 'i', 's', 'u', 'code', 'pre', 'a']);
+  html.replace(/<(\/?)([a-z]+)(\s[^>]*)?>/gi, (full, slash, rawName) => {
+    const name = rawName.toLowerCase();
+    if (!allowed.has(name)) return full;
+    if (!slash) stack.push(name);
+    else {
+      assert.equal(stack.pop(), name, `mismatched close </${name}> in ${html}`);
+    }
+    return full;
+  });
+  assert.equal(stack.length, 0, `unclosed tags in ${html}`);
+}
 
 test('extractImageTokens keeps only images inside IMAGE_DIR', () => {
   const baseDir = path.join(os.tmpdir(), 'aipal-test-images');
@@ -122,6 +138,25 @@ test('markdownToTelegramHtml formats basic markdown', () => {
   assert.match(output, /<code>code<\/code>/);
   assert.match(output, /<pre><code>const x = 1;\n<\/code><\/pre>/);
   assert.match(output, /<a href="https:\/\/openai.com">OpenAI<\/a>/);
+});
+
+test('markdownToTelegramHtml repairs overlapping emphasis into nested tags', () => {
+  // Reproduces the Telegram 400 "Unmatched end tag, expected </i>, found </b>"
+  // crash that failed cron summaries.
+  for (const input of [
+    '_a **b_ c**',
+    '*foo _bar* baz_',
+    '**bold** and *italic* and _under_',
+    'globs like *.js and __init__.py',
+  ]) {
+    assertWellNested(markdownToTelegramHtml(input));
+  }
+});
+
+test('balanceTelegramHtml repairs malformed raw HTML', () => {
+  assertWellNested(balanceTelegramHtml('open <i>x <b>y</i> z</b>'));
+  // Orphan closing tag is dropped, not emitted.
+  assert.equal(balanceTelegramHtml('stray </b> and <b>ok</b>'), 'stray  and <b>ok</b>');
 });
 
 test('chunkMarkdown keeps fences together when possible', () => {

@@ -50,6 +50,26 @@ function sanitizeResponse(value) {
   return stripToolCallXml(extractJsonResult(stripAnsi(value)));
 }
 
+// Telegram returns 400 "can't parse entities" if HTML is still malformed
+// after conversion. Rather than fail the whole message (e.g. a cron summary),
+// retry the same chunk as plain text with no parse_mode.
+function isParseEntitiesError(err) {
+  const description = String(
+    (err && err.response && err.response.description) || (err && err.message) || ''
+  );
+  return /can't parse entities/i.test(description);
+}
+
+async function sendWithHtmlFallback(send, html, plain) {
+  try {
+    await send(html, { parse_mode: 'HTML', disable_web_page_preview: true });
+  } catch (err) {
+    if (!isParseEntitiesError(err)) throw err;
+    console.warn('Telegram HTML parse failed; resending as plain text:', err.message);
+    await send(plain, { disable_web_page_preview: true });
+  }
+}
+
 function createTelegramReplyService(options) {
   const {
     bot,
@@ -99,10 +119,11 @@ function createTelegramReplyService(options) {
     if (text) {
       for (const chunk of chunkMarkdown(text, 3000)) {
         const formatted = markdownToTelegramHtml(chunk) || chunk;
-        await ctx.reply(formatted, {
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-        });
+        await sendWithHtmlFallback(
+          (body, extra) => ctx.reply(body, extra),
+          formatted,
+          chunk
+        );
       }
     }
     const uniqueImages = Array.from(new Set(imagePaths));
@@ -170,11 +191,12 @@ function createTelegramReplyService(options) {
     if (text) {
       for (const chunk of chunkMarkdown(text, 3000)) {
         const formatted = markdownToTelegramHtml(chunk) || chunk;
-        await bot.telegram.sendMessage(chatId, formatted, {
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-          ...threadExtra,
-        });
+        await sendWithHtmlFallback(
+          (body, extra) =>
+            bot.telegram.sendMessage(chatId, body, { ...extra, ...threadExtra }),
+          formatted,
+          chunk
+        );
       }
     }
     const uniqueImages = Array.from(new Set(imagePaths));
